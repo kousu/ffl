@@ -1,0 +1,53 @@
+Federated Friends Locking
+=========================
+
+Semi-public posts (blog or otherwise) are very useful, socially.
+They allow engaging in the discussions on the public web,
+without all the riskiness of being totally public,
+and having all your history logged for inspection by doxxers or just jerks.
+
+There are two methods of semi-public posts:
+- have a pseudoanonymous name, and guard it carefully or dump it quickly (e.g. tumblr) -- hard to do right!! if the data is public it's still public
+- have everyone on a central server (Livejournal, Facebook, G+)
+- arrange a complicated federated-subscription thing, where users follow each other and then optionally can put followers into groups (Diaspora)
+- don't (Twitter)
+
+I have a simpler idea:
+ get people ("subscribers") to authenticate to you ("author") *once*.
+ From the subscribers' perspective, instead of getting an account (in particular, instead of getting a password) to remember, they just get a customized RSS feed
+   Instead of authing the feed each time, it is downloadable anywhere, but protected by TLS+a long random string, the way Google docs are.
+ from your perspective, you get a notification when you get a new follower,
+ just like normal, and you can accept them or not. when you accept them they get put into a default group ("Subscribers"?) and you have the option of adding others ("Friends", "Family", etc. the normal)
+ but there is a subtle difference in what "accept" means from elsewhere:
+ - the set of people you've accepted as friends is not public
+ - people's subscription still behaves even without you accepting them
+ - "accepting" doesn't mean "follow back" (because there's nothing standard attached to their authentication the way there is when you follow back within a centralized server)
+ 
+
+
+Also, ideally authentication is handled by an identity provider, so that users don't need to sign up for 
+I think how I'm going to do this is python-social-auth
+which is  unifying wrapper for OpenID, OAuth 1 and 2, and email authentication.
+ STUMBLING BLOCK:
+  - OAuth a) is *not* an authentication protocol, it's an *authorization* protocol
+             it is meant for handing out capabilities, in the form of session tokens, so that mashup sites can e.g. pull your google calendar, access your twitter DMs, pull your profile data off facebook...
+               people abuse it into being an authentication protocol (see: Soundcloud, Disqus, Livejournal)
+               but it's really unweildy for this, and the original core author has bailed and railed against it
+               nevertheless, it currently dominates "social login" because Facebook, Twitter, and Google support it and Facebook and Twitter *don't* support OpenID
+          b) because it's meant for making apps interact, *every app must have app keys from *each* provider
+             and an "app" means "a website"
+             so every person who wants to use OAuth to log their friends into their blog must create a developer account at *each* site they want and deal with that bureaucracy
+             which is bulllllshit
+
+I think for a first draft, I will simply do use email auth:
+- prove that you own an email (as sketchy as that is), and get the feed from that.
+
+UX points
+--------
+- when the private feed URL is handed out, it should be stressed that it is a *private* feed
+- each friendslocked post should have a [THIS POST IS FRIENDSLOCKED] header
+- links to ways to import it into systems people already use (LJ and tumblr can both syndicate feeds for you)
+- the privacy settings need to be integrated into the post editor. it must be doable at runtime.
+  - the choices are "Public" or any set combination of groups (notated with +s and -s); also each subscriber is implicitly in a group of one, so that you can + or - individual people
+  - since i don't necessarily want to tie this to any framework, i wonder if there can be and AJAX widget you drop on the post editor that handles this?
+- if you could integrate your pre-existing PIM, especially the pre-existing PIM groups
