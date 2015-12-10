@@ -7,11 +7,6 @@ import mimetypes
 from flask import Flask, Response, request, redirect
 
 
-import logging
-logging.basicConfig(format="%(levelname)s: %(message)s")
-logging.getLogger().setLevel(logging.DEBUG)
-
-
 app = Flask(__name__)
 #SSLify(app) #TODO: https://github.com/kennethreitz/flask-sslify forces https:// URLs; this is necessary to protect the session cookies, obviously
 
@@ -35,7 +30,7 @@ def cookify(fname, session):
 	but we don't protect against malicious readers. if you suspect your friends are reposting you maliciously you (TODO: support)
 	"""
 	location = "/%(fname)s" % locals()
-	logging.info("Setting a cookie '%s' and reloading to %s", session, location)
+	app.logger.info("Setting a cookie '%s' and reloading to %s", session, location)
 	
 	r = redirect(location, 301)
 	r.set_cookie('auth', session) #??
@@ -45,26 +40,26 @@ def cookify(fname, session):
 def guarded_get(fname):
 	
 	type, encoding = mimetypes.guess_type(fname) # we may edit fname, so do this first
-	logging.info("Guessing %s is %s+%s" % (fname, type, encoding))
+	app.logger.info("Guessing %s is %s+%s" % (fname, type, encoding))
 	
 	# XXX sanitize ".."s somehow to avoid jumping up. can i just normpath or something?
 	#fname = os.path.abspath(os.path.join(".", fname))
-	logging.debug("fname = %s" % (fname,))
+	app.logger.debug("fname = %s" % (fname,))
 	if fname.endswith(".locked"):
-		logging.warn("%s already ends in '.locked'. runaway redirect?", fname)
+		app.logger.warn("%s already ends in '.locked'. runaway redirect?", fname)
 	
 	try: #if anything fails, we give a 404. note: timing attacks might still be possible.
 		if os.path.exists(fname+".locked"):
 			# the resource is locked
 			if os.path.exists(fname):
-				logging.warn("Both %s and %s.locked exist.")
+				app.logger.warn("Both %s and %s.locked exist.")
 			
 			# here's the majicks:
 			#  we look for a cookie containing the auth token
 			if 'auth' not in request.cookies:
 				raise ValueError("No auth found")
 			auth = request.cookies['auth']
-			logging.info("AUTH = %s", auth)
+			app.logger.info("AUTH = %s", auth)
 			# now, unwrap auth
 			auth = base64.b64decode(auth,b"-_")
 			auth = signer.unsign(auth)
@@ -82,7 +77,7 @@ def guarded_get(fname):
 	
 		return Response(open(fname), 200, mimetype=type)
 	except Exception as exc:
-		logging.info("failed because: %s", exc)
+		app.logger.info("failed because: %s", exc)
 		return Response("<html><body><h1>404 /%s Not Found</h1></body></html>" % fname, 404)
 	
 
