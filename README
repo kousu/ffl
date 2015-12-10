@@ -13,7 +13,7 @@ There are two methods of semi-public posts:
 - don't (Twitter)
 
 I have a simpler idea:
- get people ("subscribers") to authenticate to you ("author") *once*.
+ Get people ("subscribers") to authenticate to you ("author") *once*.
  From the subscribers' perspective, instead of getting an account (in particular, instead of getting a password) to remember, they just get a customized RSS feed
    Instead of authing the feed each time, it is downloadable anywhere, but protected by TLS+a long random string, the way Google docs are.
  from your perspective, you get a notification when you get a new follower,
@@ -24,6 +24,10 @@ I have a simpler idea:
  - "accepting" doesn't mean "follow back" (because there's nothing standard attached to their authentication the way there is when you follow back within a centralized server)
  
 
+
+
+Initial Authentication
+----------------------
 
 Also, ideally authentication is handled by an identity provider, so that users don't need to sign up for 
 I think how I'm going to do this is python-social-auth
@@ -41,12 +45,53 @@ which is  unifying wrapper for OpenID, OAuth 1 and 2, and email authentication.
 
 I think for a first draft, I will simply do use email auth:
 - prove that you own an email (as sketchy as that is), and get the feed from that.
+   -> need to protect against replays and whatnot; if you can do it stateless, even better
+
+Or maybe just a single string without verification? after all, auth only happens once, so ToFU??
+
+
+Repeat Authentication
+---------------------
+
+The goal is to avoid making the reader deal with auth as much as possible (if I make my friends sign in to read my blog none of them will read my blog)
+So repeat auth is entirely via the 
+
+ idea one: embed session cookies in URLs
+ idea two: somehow have a landing page which puts session cookies 
+
+but maybe we could allow people to reassert their auths
+
+
+scraps
+------
+(( theme: use itsdangerous to do the syncookies trick: avoid as much state as possible by sending state as a base64'd-json with a MAC on the end ))
+
+
+(( point: make sure not to fail open!! we need to prefer locked to unlocked ))
+ maybe the best thing for this is:
+  - GET /x first looks for x.locked; if it finds it it checks for a cookie containing base64(("x",timestamp,HMAC(k, ("x", timestamp))) and that timestamp > time.time()
+      ((note: the tuples need to be suitable serialized first; struct.pack or pickle or something))
+      if these pass, 200 and return the content
+      if fail, 403 (or should we 404, so that people can't even get anything by guessing filenames?)
+    else, look for x. if this is found, 200 and return it
+    if not, 404
+    Notice: this fails-closed: if /x.locked and /x exist then the second is ignored (and UX point: warn about these shadowing files at every opportunity)
+            and there's no attached ACL list which, if deleted or erased from the file. It's just, is this world readable or not, and if not, a capability protocol.
+  
+
+we could wrap a pre-existing blog site in this by proxying: instead of asking the disk for x.locked and x, we ask another webserver for them
+but it would be ungainly in other ways: how would you edit the blog posts in the first place?
+
 
 UX points
 --------
 - when the private feed URL is handed out, it should be stressed that it is a *private* feed
 - each friendslocked post should have a [THIS POST IS FRIENDSLOCKED] header
 - links to ways to import it into systems people already use (LJ and tumblr can both syndicate feeds for you)
+   (is there an FB syndicator? There seems to be companies that have made FB plugins which will relay RSS to a public facebook page
+     e.g. http://www.ilovefreesoftware.com/09/webware/rss-to-twitter-facebook-myspace-linkedin-dlvr-it.html
+     but there doesn't seem to obviously be any which take private feed and syndicate it into a facebook feed.
+      I could..what... offer to give email notifications?)
 - the privacy settings need to be integrated into the post editor. it must be doable at runtime.
   - the choices are "Public" or any set combination of groups (notated with +s and -s); also each subscriber is implicitly in a group of one, so that you can + or - individual people
   - since i don't necessarily want to tie this to any framework, i wonder if there can be and AJAX widget you drop on the post editor that handles this?
