@@ -11,7 +11,8 @@ app = Flask(__name__)
 #SSLify(app) #TODO: https://github.com/kennethreitz/flask-sslify forces https:// URLs; this is necessary to protect the session cookies, obviously
 
 
-signer = itsdangerous.Signer("lawlcats")
+app.secret_key = os.urandom(24) # set the key used for signing cookies
+signer = itsdangerous.Signer(app.secret_key) #XXX is it a bad idea to reuse the secret here? flask just uses
 
 # DEBUG: generate an auth token
 AUTH = json.dumps({"p": "test", "t": int(time.time()) + 200})
@@ -35,6 +36,10 @@ def cookify(fname, session):
 	r = redirect(location, 301)
 	r.set_cookie('auth', session) #??
 	return r
+
+#TODO: it would be more elegant if the token was shorter:
+# instead of a json string, just send the timestamp and an HMAC.
+# the HMAC is over (fname, ((here we could still use json, actually)
 
 @app.route("/<fname>", methods=['GET'])
 def guarded_get(fname):
