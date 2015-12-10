@@ -15,14 +15,17 @@ app.secret_key = os.urandom(24) # set the key used for signing cookies
 signer = itsdangerous.Signer(app.secret_key) #XXX is it a bad idea to reuse the secret here? flask just uses
 
 # DEBUG: generate an auth token
-AUTH = json.dumps({"p": "test", "t": int(time.time()) + 200})
-AUTH = AUTH.encode("ascii") # is this safe ???
-AUTH = signer.sign(AUTH) #TODO: use pycrypto instead of itsdangerous
-AUTH = base64.b64encode(AUTH, b"-_") #use URL-safe b64
-AUTH = AUTH.decode("ASCII")
-print("http://localhost:5000/locked/%(AUTH)s/%(fname)s" % {'AUTH': AUTH, 'fname': "test"})
+for path in ["test","a/b/c/e"]:
+	AUTH = json.dumps({"p": path, "t": int(time.time()) + 20})
+	AUTH = AUTH.encode("ascii") # is this safe ???
+	AUTH = signer.sign(AUTH) #TODO: use pycrypto instead of itsdangerous
+	print(AUTH)
+	AUTH = base64.b64encode(AUTH, b"-_") #use URL-safe b64
+	AUTH = AUTH.decode("ASCII")
+	print("http://localhost:5000/locked/%(AUTH)s/%(fname)s" % {'AUTH': AUTH, 'fname': path})
 
-@app.route("/locked/<session>/<fname>", methods=['GET'])
+
+@app.route("/locked/<session>/<path:fname>", methods=['GET'])
 def cookify(fname, session):
 	"""
 	Record the session token, but point the user at the 'canonical' URL for the thing
@@ -41,7 +44,7 @@ def cookify(fname, session):
 # instead of a json string, just send the timestamp and an HMAC.
 # the HMAC is over (fname, ((here we could still use json, actually)
 
-@app.route("/<fname>", methods=['GET'])
+@app.route("/<path:fname>", methods=['GET'])
 def guarded_get(fname):
 	
 	type, encoding = mimetypes.guess_type(fname) # we may edit fname, so do this first
@@ -67,6 +70,7 @@ def guarded_get(fname):
 			app.logger.info("AUTH = %s", auth)
 			# now, unwrap auth
 			auth = base64.b64decode(auth,b"-_")
+			print(auth)
 			auth = signer.unsign(auth)
 			auth = json.loads(auth.decode("ascii"))
 			if not ('p' in auth and 't' in auth and isinstance(auth['p'],str) and isinstance(auth['t'],int)):
