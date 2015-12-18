@@ -19,8 +19,9 @@
 
 from flask import *
 from flask.ext.login import *
-from flask.ext.login import current_user
+from flask.ext.login import login_user, logout_user, current_user, UserMixin
 
+import os
 import binascii
 import shelve
 
@@ -67,13 +68,14 @@ class ShelveLoginLess(LoginLessBase):
 		return self.app.login_manager.user_loader(self.DB[key])
 	
 	def add_user(self, user):
-		user.rekey()
+		print("NEW USER IS (%s,%s)" % (user.get_id(), user.get_auth_token()))
 		self.DB[user.key] = user.get_id()
 		
 		self.DB.sync()
 	
 	def rekey_user(self, user):
 		del DB[user.key] #???? this is dumb
+		user.rekey()
 		add_user(user)
 
 
@@ -89,19 +91,25 @@ def make_more_secure_token(bitlength=64*8):
 	
 	if bitlength % 8 != 0:
 		raise ValueError("bitlength must be an even number of bytes")
-	return binascii.hexlify(os.urandom(bitlength//8))
+	return binascii.hexlify(os.urandom(bitlength//8)).decode("ascii")
 
 # a 'token' is *more* than a password: it's identification and authorization in one.
 # this has really nice UX: if you have the token you get in without thinking about it (ssh keys are like this too)
 # but it means *it must not* be sniffed, because it gives full access to the account
 
 
-def RandomTokenUserMixin(UserMixin):
-	def __init__(self, *args, **kwargs):
+class RandomTokenUserMixin(UserMixin):
+	def __init__(self, id, *args, **kwargs):
+		self.id = id #argh
 		super().__init__(*args, **kwargs)
 		if not getattr(self, 'key', None):
 			self.rekey()
-		
+	
+	def get_auth_token(self):
+		""
+		print("AUTH TOKEN from (%s,%s) BEING GOTTEN" % (self.get_id(), self.key))
+		return self.key
+	
 	def rekey(self):
 		self.key = make_more_secure_token()
 		# TODO: immediately persist this change to the database
@@ -136,16 +144,56 @@ def RandomTokenUserMixin(UserMixin):
 
 def test():
 	app = Flask(__name__)
+	app.secret_key = os.urandom(52)
 	lm = LoginManager(app)
+	@lm.user_loader
+	def user_load(id):
+		print("Loading user %s" % (id,))
+		print("DB : %s" % (dict(ll.DB),))
+		u = RandomTokenUserMixin(id)
+		# oh.
+		# this is where it fucks up
+		# because i'm making multiple accounts with the same ID and no consistency checks. that's the real problem: this assumes there's 1:1 between IDs and keys and this makes that false
+		# every write to the user DB  needs to also write to the key-cache
+		u.key = [k for k in ll.DB if ll.DB[k] == id][0] #ugh ugh ugh
+		return u
+	
 	ll = LoginLess(app, "accounts.dbm") #this is annoying, but i'll fix the API to suck less later
 	
 	@app.route("/")
 	def index():
-		return "<html><body><h1>Test App For Gigas</h1><a href=%(account)s>[Account]</a></body></html>" % {"account": url_for("account")}
+		return ("<html><body><h1>Test App For Gigas</h1> "
+                        "<a href=%(newaccount)s>[New Account]</a> "
+                        "<a href=%(account)s>[Account]</a> "
+                        "</body></html>") % {x: url_for(x) for x in ["newaccount","account"]}
 	
+	@app.route("/newaccount", methods=["GET", "POST"])
+	def newaccount():
+		print(request.method)
+		print(dict(request.form))
+		if request.method == "GET":
+			return ("<html><body><h1>New Account</h1> "
+                        "<form action=%(this)s method=POST><input autofocus type=text name='identity' placeholder='Tell me who you are, child.'><input type=submit style='display: none'></form>"
+                        "</body></html>") % {"id": current_user.get_id(), "j": json.dumps(current_user.__dict__), "this": url_for("newaccount")}
+		if request.method == "POST":
+			app.logger.info("POSTING: %s" % (request.form['identity'],))
+			user = RandomTokenUserMixin(request.form['identity'])
+			print("After creation:", user.__dict__)
+			ll.add_user(user) #this doesn't get along
+			print("After add_user():", user.__dict__)
+			login_user(user)
+			print("After login_user(): user=", user.__dict__)
+			print("After login_user(): current_user=", current_user.__dict__)
+			#assert current_user is user
+			return redirect(url_for("account"))
+			
 	@app.route("/account")
 	def account():
-		return "<html><body><h1>Account Page</h1>Hello <em>%(id)s</em>. <br/>Your details are: %(j)s.</body></html>" % {"id": current_user.get_id(), "j": json.dumps(current_user.__dict__)}
+		print("Account(): current_user=", current_user.__dict__)
+		return ("<html><body><h1>Account Page</h1> "
+                        "Hello <em>%(id)s</em>. "
+                        "<br/>Your details are: %(j)s. "
+                        "</body></html>") % {"id": current_user.get_id(), "j": json.dumps(current_user.__dict__)}
 	
 	# fuck youuuuuuuuuuuuuuuu flask. in debug mode you run the werkzeug reloader which *breaks* bc it means the shelve is opened twice in one process)
 	# what the hell? is your webserver not supposed to? I guess you really really really expect *only* to use a SQL backend, eh??? FUCK YOUUU
