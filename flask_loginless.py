@@ -26,44 +26,17 @@ from base64 import *
 import binascii
 import shelve
 
+from datetime import *
 
-class LoginLess(object):
-	"""
-	A Flask extension to make login less painful. Get it?
-	"""
-	
-	def __init__(self, app, only_keys = True):
-		"""
-		app should be your Flask app
-		if only_keys is set, then LoginLess is the *only* supported login method, which means everyone
-		"""
-		self.app = app
-		
-		if only_keys:
-			self.app.login_manager.login_view = None
-		app.route("/auth/<key>")(self._auth)
-	
-	def _auth(self, key):
-		user = self.app.login_manager.token_callback(key)
-		if user is None:
-			return abort(401)
-		else:
-			login_user(user)
-			return redirect(request.args.get("next", "/"))
-	
-	def url_for(self, user):
-		"generate the login-link for the given user"
-		# TODO: should this check that the user actually has a valid login?
-		if hasattr(user, 'get_auth_token'): #AnonymousUserMixin doesn't define this, and s
-			token = user.get_auth_token()
-			if token is not None: # this is just to be defensive (in case AnonymouseUserMixin ever learns not to be broken)
-				return url_for("_auth", key=token) #aah, this is weird: url_for is a magic global that access other thread-local magic globals. hmm. Flask is sketchy.
-		
-		# users with no login can just be sent to the index, I guess
-		return "/"
+import flask.ext.login
 
 
 
+
+
+# a 'token' is *more* than a password: it's identification and authorization in one.
+# this has really nice UX: if you have the token you get in without thinking about it (ssh keys are like this too)
+# but it means *it must not* be sniffed, because it gives full access to the account
 
 
 def make_more_secure_token(bitlength=64*8):
@@ -84,34 +57,106 @@ def make_more_secure_token(bitlength=64*8):
 	
 	return str(token, "ascii") # write as a str, instead of bytes, because HTTP
 
-# a 'token' is *more* than a password: it's identification and authorization in one.
-# this has really nice UX: if you have the token you get in without thinking about it (ssh keys are like this too)
-# but it means *it must not* be sniffed, because it gives full access to the account
 
-
-class TokenUserMixin(UserMixin):
-	def __init__(self, id, token=None, *args, **kwargs):
-		self.id = id #argh
-		if token is None:
-			token = make_more_secure_token()
-		self.token = token
-		super().__init__(*args, **kwargs)
+class LoginTokenMixin(UserMixin):
+	"A mixin for Flask-Login User objects which generates and remembers."
+	
+	@classmethod
+	def reload(cls, id, token):
+		C = cls(id)
+		C.id = id
+		C.token = token
+		return C
 	
 	def get_auth_token(self):
-		""
-		print("AUTH TOKEN from (%s,%s) BEING GOTTEN" % (self.get_id(), self.token))
-		return self.token
+		if not hasattr(self,'_token'):
+			self.invalidate_token()
+		return self._token
+	
+	def invalidate_token(self):
+		"""
+		Invalidate this user's authentication token by forgetting it and creating a new one.
+		
+		BEWARE: When you call this, make sure to immediately update any copies (e.g., in your database)
+		"""
+		self._token = make_more_secure_token()
+
+
+
+class LoginLess(object):
+	"""
+	A Flask extension to make login less painful. Get it?
+	"""
+	
+	def __init__(self, app, only_keys = True):
+		"""
+		app should be your Flask app
+		if only_keys is set, then LoginLess is the *only* supported login method, which means everyone
+		"""
+		if not hasattr(app, 'login_manager'):
+			raise ValueError("You must set a Flask-Login LoginManager on your app before using Flask-LoginLess")
+		if not getattr(app.login_manager, 'token_callback', None):
+			raise ValueError("You must set a Flask-Login LoginManager.token_loader on your app before using Flask-LoginLess")
+
+		self.app = app
+		
+		if only_keys:
+			self.app.login_manager.login_view = None
+		app.route("/auth/<key>", "auth")(self._auth)
+		app.route("/logout", "logout")(self._logout)
+	
+	def _auth(self, key):
+		user = self.app.login_manager.token_callback(key)
+		
+		if user is None:
+			return "No such key", 401
+		if current_user != user:
+			return "You are already logged in", 401
+		
+		login_user(user)
+		return redirect(request.args.get("next", "/"))
+	
+	def _logout(self):
+		#XXX this is vulnerable to CSRF!
+		# There is this session-pinning-style attack, except it is actually an account pin:
+		# Attack: someone injects a webpage which contacts http://blog.you/logout (e.g. via XMLHttpRequest, via <img src>, <script src>, lots of things...
+		# then they do the same to make you hit http://blog.you/auth/<attacker_key>, now you are logged in as them.
+		#
+		# Mitigations: make this function check a CSRF token before working?
+		#  problem: the attack is also good if you catch people when they're not logged in(which, tbh, is most people?)
+		#           and then if they ever do go over to the blog, they are logged in as the attacker
+		logout_user(current_user)
+		return redirect("/")
+	
+	def url_for(self, user):
+		"generate the login-link for the given user"
+		# TODO: should this check that the user actually has a valid login?
+		if hasattr(user, 'get_auth_token'): #AnonymousUserMixin doesn't define this, and s
+			token = user.get_auth_token()
+			if token is not None: # this is just to be defensive (in case AnonymouseUserMixin ever learns not to be broken)
+				return url_for("_auth", key=token) #aah, this is weird: url_for is a magic global that access other thread-local magic globals. hmm. Flask is sketchy.
+		
+		# users with no login can just be sent to the index, I guess
+		return "/"
+
+
+
+
+
+
 
 
 
 # Flask-Login's way of figuring out who you are:
-# It first looks at cookies
-#  which looks at @login_manager.token_loader
-#  then @login_manager.user_loader,
-# Then it looks at the request (@login_manager.request_loader) itself
-# Then at the HTTP "Authorization:" header (@login_manager.header_loader) -- which is deprecated in favour of the generalized request object method now
+# It first looks at the session cookie, which is signed with the server's key
+#  If that contains 'user_id', is assumes that's you and calls user_loader
+# Then it looks for the remember_token cookie
+#  If you have set @login_manager.token_loader, then it assumes the content is a token
+#  otherwise it assumes the content is a user id and calls @login_manager.user_loader,
+# *failing that* it looks at the request (@login_manager.request_loader) itself
+# or the HTTP "Authorization:" header (@login_manager.header_loader) (the latter is generalized by the former)
 #
-# All of these are expected to *produce a user object*, not a user ID, but
+# All of these are expected to *produce a user object*, not a user ID
 # takes a user ID and produces a user object
 # The upshot is: if you set a token_loader then you use tokens, unless you use, unless you have for some godawful reason chosen to use HTTP Digest Auth (which is BROKEN because MD5 is broken)
 # Flask-login is not /great/ here and even less documented. I had to work this shit
@@ -124,21 +169,22 @@ class UserDB(shelve.Shelf):
 	Wraps a shelve.Shelf to make it work like a cheap doubly-indexed database for use with the User class
 	It is keyed on user id, but it also maintains an index { login key: user id }
 	because while we want id to be the primary key for most situations,  we also want to support auth without sending the ID too (for elegance reasons)
-	 TODO: a SQL table with a proper pair of indecies would also work
+	This is really just a hack in place of setting up an entire SQL table with (id primary key, token unique, index(token))
+	
 	TODO: make this a wrapper around a wrapper:
-		- this should be a TokenIndex, and it should register changes
+	     a TokenIndex which soley, and it should register changes
 	         ah, but registering changes is a bitch
 	"""
 	def __init__(self, file):
 		self._db = shelve.open(file)
 		self._key_idx = {self._db[id].get_auth_token(): id for id in self._db}
-	def __getitem__(self, k):
+	def __getitem__(self, id=None, token=None):
 		"k can either be .get_id() or .get_auth_token()"
-		if k in self._key_idx:
+		if token in self._key_idx:
 			# translate auth_token -> ids, if necessary
-			k = self._key_idx[k]
+			id = self._key_idx[token]
 		# now, assume t is a .get_id()
-		return self._db[k]
+		return self._db[id]
 	
 	def __setitem__(self, id, user):
 		if id != user.get_id(): raise ValueError("mismatched id fields")
@@ -151,7 +197,7 @@ class UserDB(shelve.Shelf):
 				raise ValueError("Duplicate auth tokens. New user %(new)s and old user %(old)s share token %(t)s" % {"old": self._key_idx[k], "new": id, "t": t})
 		
 		# XXX what happens if the user is rekeyed? this is unlikely, but a rekeying followed by a key collision with the discarded key will appear to be dupe, even though it's not
-	
+		
 		self._db[id] = user
 		self._key_idx[t] = id
 	
@@ -166,27 +212,25 @@ class UserDB(shelve.Shelf):
 
 def test():
 	app = Flask(__name__)
-	app.secret_key = "LoginLess" #os.urandom(52) #<-- a side-effect of changing the secret key at boot is that all sessions are invalidated
+	#app.secret_key = os.urandom(52) #<-- a side-effect of changing the secret key at boot is that all sessions are invalidated
+	app.secret_key = "LoginLess"
 	
 	users = UserDB("accounts.dbm")
+	
 	lm = LoginManager(app)
-	
-	
 	@lm.user_loader
 	def user_load(id):
-		print("Loading user %s" % (id,))
-		return users.get(id, None)
+		try:
+			return users[id]
+		except KeyError:
+			return None
 	
 	@lm.token_loader
 	def token_load(token):
 		try:
-			id = users._key_idx[token]
+			return users._key_idx[token] #TODO: clean
 		except KeyError:
 			return None
-		# now look up ID in the database the normal way
-		u = app.login_manager.user_callback(id) #<-- this is in prep for moving this inside of LoginLess
-		assert u.get_auth_token() == token
-		return u
 	
 	ll = LoginLess(app)
 	# idea: LoginLess sets app.login_manager.token_loader, switching the view to using tokens
