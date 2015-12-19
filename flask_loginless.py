@@ -22,6 +22,7 @@ from flask.ext.login import *
 from flask.ext.login import login_user, logout_user, current_user, UserMixin
 
 import os
+from base64 import *
 import binascii
 import shelve
 
@@ -31,9 +32,7 @@ class LoginLess(object):
 		
 		self.app.login_manager.login_view = None #if we're using login-less then we're *not* using any other login method. maybe. i don't know.
 		app.route("/auth/<key>")(self._auth)
-		print(self._auth.__name__)
 	
-		
 	def _auth(self, key):
 		# look up key
 		user = self.app.login_manager.token_callback(key)
@@ -54,7 +53,15 @@ def make_more_secure_token(bitlength=64*8):
 	
 	if bitlength % 8 != 0:
 		raise ValueError("bitlength must be an even number of bytes")
-	return binascii.hexlify(os.urandom(bitlength//8)).decode("ascii")
+	
+	token = os.urandom(bitlength//8) # generate token
+	
+	token = urlsafe_b64encode(token) #write in base64
+	token = token.rstrip(b"=")
+	
+	#token = binascii.hexlify(token) #write as hex characters
+	
+	return str(token, "ascii") # write as a str, instead of bytes, because HTTP
 
 # a 'token' is *more* than a password: it's identification and authorization in one.
 # this has really nice UX: if you have the token you get in without thinking about it (ssh keys are like this too)
