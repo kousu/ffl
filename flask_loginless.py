@@ -39,6 +39,7 @@ class LoginLess(object):
 		user = self.app.login_manager.token_callback(key)
 		if user is not None:
 			login_user(user)
+		return redirect(request.args.get("next", "/"))
 	
 
 
@@ -123,7 +124,9 @@ class UserDB(shelve.Shelf):
 		return getattr(self._db, attr)
 
 
-# 
+# monkey-patch AnonymousUserMixin to not be dumb
+import flask.ext.login
+flask.ext.login.AnonymousUserMixin.get_auth_token = lambda self: None
 
 def test():
 	app = Flask(__name__)
@@ -131,7 +134,7 @@ def test():
 	lm = LoginManager(app)
 	
 	DB = UserDB("accounts.dbm")
-	DB.clear() #DEBUG
+	#DB.clear() #DEBUG
 	
 	@lm.user_loader
 	def user_load(id):
@@ -181,7 +184,7 @@ def test():
                         "<br/>Your details are: %(j)s. "
                         "<br/>Your login link is <a href=%(auth)s>%(auth)s</a>. "
                         "</body></html>") % {"id": current_user.get_id(), "j": json.dumps(current_user.__dict__),
-                                             "auth": url_for("_auth", key=current_user.get_auth_token())}
+                                             "auth": url_for("_auth", key=current_user.get_auth_token() if current_user.get_auth_token() else "n/a")}
 	
 	# fuck youuuuuuuuuuuuuuuu flask. in debug mode you run the werkzeug reloader which *breaks* bc it means the shelve is opened twice in one process)
 	# what the hell? is your webserver not supposed to? I guess you really really really expect *only* to use a SQL backend, eh??? FUCK YOUUU
