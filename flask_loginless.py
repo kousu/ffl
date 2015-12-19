@@ -25,61 +25,23 @@ import os
 import binascii
 import shelve
 
-class LoginLessBase(object):
+class LoginLess(object):
 	def __init__(self, app):
 		self.app = app
 		
 		self.app.login_manager.login_view = None #if we're using login-less then we're *not* using any other login method. maybe. i don't know.
-		app.route("/auth/<key>")(self._auth_view)
+		app.route("/auth/<key>")(self._auth)
+		print(self._auth.__name__)
 	
 		
-	def _auth_view(self, key):
+	def _auth(self, key):
 		# look up key
-		user = self.get_user(key)
+		user = self.app.login_manager.token_callback(key)
 		if user is not None:
 			login_user(user)
 	
-	def get_user(self, key):
-		"""
-		
-		"""
-		raise NotImplementedError("Override to implement")
-	
-	def rekey_user(self, user):
-		"""
-		
-		"""
-		raise NotImplementedError("Override to implement")
 
 
-
-
-
-
-
-class ShelveLoginLess(LoginLessBase):
-	"DANGER: DO NOT DESERIALIZE UNTRUSTED INPUT"
-	def __init__(self, app, database):
-		super().__init__(app)
-		self.DB = shelve.open(database)
-	
-	def get_user(self, key):
-		# TODO: 
-		return self.app.login_manager.user_loader(self.DB[key])
-	
-	def add_user(self, user):
-		print("NEW USER IS (%s,%s)" % (user.get_id(), user.get_auth_token()))
-		self.DB[user.key] = user.get_id()
-		
-		self.DB.sync()
-	
-	def rekey_user(self, user):
-		del DB[user.key] #???? this is dumb
-		user.rekey()
-		add_user(user)
-
-
-LoginLess = ShelveLoginLess
 
 
 
@@ -98,23 +60,18 @@ def make_more_secure_token(bitlength=64*8):
 # but it means *it must not* be sniffed, because it gives full access to the account
 
 
-class RandomTokenUserMixin(UserMixin):
-	def __init__(self, id, *args, **kwargs):
+class TokenUserMixin(UserMixin):
+	def __init__(self, id, token=None, *args, **kwargs):
 		self.id = id #argh
+		if token is None:
+			token = make_more_secure_token()
+		self.token = token
 		super().__init__(*args, **kwargs)
-		if not getattr(self, 'key', None):
-			self.rekey()
 	
 	def get_auth_token(self):
 		""
-		print("AUTH TOKEN from (%s,%s) BEING GOTTEN" % (self.get_id(), self.key))
-		return self.key
-	
-	def rekey(self):
-		self.key = make_more_secure_token()
-		# TODO: immediately persist this change to the database
-		# problem: this is abstracted away from the database
-
+		print("AUTH TOKEN from (%s,%s) BEING GOTTEN" % (self.get_id(), self.token))
+		return self.token
 
 
 
@@ -133,58 +90,87 @@ class RandomTokenUserMixin(UserMixin):
 # and also if instead of having four callbacks that it has to negotiate each request, just have one which is tagged, so @lm.loader('user_id')
 
 
+class UserDB(shelve.Shelf):
+	"""
+	Wraps a shelve.Shelf to make it work like a cheap doubly-indexed database for use with the User class
+	It is keyed on user id, but it also maintains an index { login key: user id }
+	because while we want id to be the primary key for most situations,  we also want to support auth without sending the ID too (for elegance reasons)
+	 TODO: a SQL table with a proper pair of indecies would also work
+	TODO: make this a wrapper around a wrapper:
+		- this should be a TokenIndex, and it should register changes
+	         ah, but registering changes is a bitch
+	"""
+	def __init__(self, file):
+		self._db = shelve.open(file)
+		self._key_idx = {self._db[id].get_auth_token(): id for id in self._db}
+	def __getitem__(self, k):
+		"k can either be .get_id() or .get_auth_token()"
+		if k in self._key_idx:
+			# translate .key -> .id, if necessary
+			k = self._key_idx[k]
+		# now, assume k is a .id
+		return self._db[k]
+	def __setitem__(self, id, user):
+		if id != user.get_id(): raise ValueError("mismatched id fields")
+		self._db[id] = user
+		self._key_idx[user.get_auth_token()] = id
+	def __delitem__(self, id):
+		del self._key_idx[self._db[id].get_auth_token()]
+		del self._db[id]
+	
+	def __getattr__(self, attr):
+		"pass other methods through to self._db"
+		return getattr(self._db, attr)
 
 
-# So, what *this* extension does is
-
-
-#  - idea: 
-# the DB should just store key -> user_id and then call user_loader on the sly
 # 
 
 def test():
 	app = Flask(__name__)
 	app.secret_key = os.urandom(52)
 	lm = LoginManager(app)
+	
+	DB = UserDB("accounts.dbm")
+	DB.clear() #DEBUG
+	
 	@lm.user_loader
 	def user_load(id):
 		print("Loading user %s" % (id,))
-		print("DB : %s" % (dict(ll.DB),))
-		u = RandomTokenUserMixin(id)
-		# oh.
-		# this is where it fucks up
-		# because i'm making multiple accounts with the same ID and no consistency checks. that's the real problem: this assumes there's 1:1 between IDs and keys and this makes that false
-		# every write to the user DB  needs to also write to the key-cache
-		u.key = [k for k in ll.DB if ll.DB[k] == id][0] #ugh ugh ugh
-		return u
+		return DB[id]
 	
-	ll = LoginLess(app, "accounts.dbm") #this is annoying, but i'll fix the API to suck less later
+	@lm.token_loader
+	def token_load(k):
+		id = DB._key_idx[k]
+		# now look up ID in the database...
+		u = user_load(id)
+		assert u.get_auth_token() == k
+		return u
+		
+	ll = LoginLess(app)
+	# idea: LoginLess sets app.login_manager.token_loader, switching the view to using tokens
+	# and internally caches the tokens
 	
 	@app.route("/")
 	def index():
-		return ("<html><body><h1>Test App For Gigas</h1> "
+		return ("<html><body><h1>LoginLess Test App</h1> "
                         "<a href=%(newaccount)s>[New Account]</a> "
                         "<a href=%(account)s>[Account]</a> "
                         "</body></html>") % {x: url_for(x) for x in ["newaccount","account"]}
 	
 	@app.route("/newaccount", methods=["GET", "POST"])
 	def newaccount():
-		print(request.method)
-		print(dict(request.form))
 		if request.method == "GET":
 			return ("<html><body><h1>New Account</h1> "
                         "<form action=%(this)s method=POST><input autofocus type=text name='identity' placeholder='Tell me who you are, child.'><input type=submit style='display: none'></form>"
                         "</body></html>") % {"id": current_user.get_id(), "j": json.dumps(current_user.__dict__), "this": url_for("newaccount")}
 		if request.method == "POST":
 			app.logger.info("POSTING: %s" % (request.form['identity'],))
-			user = RandomTokenUserMixin(request.form['identity'])
+			# make a new user
+			user = TokenUserMixin(request.form['identity'])
 			print("After creation:", user.__dict__)
-			ll.add_user(user) #this doesn't get along
-			print("After add_user():", user.__dict__)
+			DB[user.get_id()] = user
 			login_user(user)
-			print("After login_user(): user=", user.__dict__)
-			print("After login_user(): current_user=", current_user.__dict__)
-			#assert current_user is user
+			#assert current_user is user #this is actually False: logging in causes the user to be *reloaded* (as in, from whatever lm.user_loader says to do)
 			return redirect(url_for("account"))
 			
 	@app.route("/account")
@@ -193,7 +179,9 @@ def test():
 		return ("<html><body><h1>Account Page</h1> "
                         "Hello <em>%(id)s</em>. "
                         "<br/>Your details are: %(j)s. "
-                        "</body></html>") % {"id": current_user.get_id(), "j": json.dumps(current_user.__dict__)}
+                        "<br/>Your login link is <a href=%(auth)s>%(auth)s</a>. "
+                        "</body></html>") % {"id": current_user.get_id(), "j": json.dumps(current_user.__dict__),
+                                             "auth": url_for("_auth", key=current_user.get_auth_token())}
 	
 	# fuck youuuuuuuuuuuuuuuu flask. in debug mode you run the werkzeug reloader which *breaks* bc it means the shelve is opened twice in one process)
 	# what the hell? is your webserver not supposed to? I guess you really really really expect *only* to use a SQL backend, eh??? FUCK YOUUU
