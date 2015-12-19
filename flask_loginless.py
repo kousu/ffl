@@ -26,20 +26,41 @@ from base64 import *
 import binascii
 import shelve
 
+
 class LoginLess(object):
-	def __init__(self, app):
+	"""
+	A Flask extension to make login less painful. Get it?
+	"""
+	
+	def __init__(self, app, only_keys = True):
+		"""
+		app should be your Flask app
+		if only_keys is set, then LoginLess is the *only* supported login method, which means everyone
+		"""
 		self.app = app
 		
-		self.app.login_manager.login_view = None #if we're using login-less then we're *not* using any other login method. maybe. i don't know.
+		if only_keys:
+			self.app.login_manager.login_view = None
 		app.route("/auth/<key>")(self._auth)
 	
 	def _auth(self, key):
-		# look up key
 		user = self.app.login_manager.token_callback(key)
-		if user is not None:
+		if user is None:
+			return abort(401)
+		else:
 			login_user(user)
-		return redirect(request.args.get("next", "/"))
+			return redirect(request.args.get("next", "/"))
 	
+	def url_for(self, user):
+		"generate the login-link for the given user"
+		# TODO: should this check that the user actually has a valid login?
+		if hasattr(user, 'get_auth_token'): #AnonymousUserMixin doesn't define this, and s
+			token = user.get_auth_token()
+			if token is not None: # this is just to be defensive (in case AnonymouseUserMixin ever learns not to be broken)
+				return url_for("_auth", key=token) #aah, this is weird: url_for is a magic global that access other thread-local magic globals. hmm. Flask is sketchy.
+		
+		# users with no login can just be sent to the index, I guess
+		return "/"
 
 
 
@@ -114,14 +135,26 @@ class UserDB(shelve.Shelf):
 	def __getitem__(self, k):
 		"k can either be .get_id() or .get_auth_token()"
 		if k in self._key_idx:
-			# translate .key -> .id, if necessary
+			# translate auth_token -> ids, if necessary
 			k = self._key_idx[k]
-		# now, assume k is a .id
+		# now, assume t is a .get_id()
 		return self._db[k]
+	
 	def __setitem__(self, id, user):
 		if id != user.get_id(): raise ValueError("mismatched id fields")
+		t = user.get_auth_token()
+		
+		# make sure we don't add dupes by accident
+		# we can't have dupe ids of course, but we might miss dupe tokens
+		if t in self._key_idx:
+			if id != self._key_idx[t]:
+				raise ValueError("Duplicate auth tokens. New user %(new)s and old user %(old)s share token %(t)s" % {"old": self._key_idx[k], "new": id, "t": t})
+		
+		# XXX what happens if the user is rekeyed? this is unlikely, but a rekeying followed by a key collision with the discarded key will appear to be dupe, even though it's not
+	
 		self._db[id] = user
-		self._key_idx[user.get_auth_token()] = id
+		self._key_idx[t] = id
+	
 	def __delitem__(self, id):
 		del self._key_idx[self._db[id].get_auth_token()]
 		del self._db[id]
@@ -131,31 +164,30 @@ class UserDB(shelve.Shelf):
 		return getattr(self._db, attr)
 
 
-# monkey-patch AnonymousUserMixin to not be dumb
-import flask.ext.login
-flask.ext.login.AnonymousUserMixin.get_auth_token = lambda self: None
-
 def test():
 	app = Flask(__name__)
-	app.secret_key = os.urandom(52)
+	app.secret_key = "LoginLess" #os.urandom(52) #<-- a side-effect of changing the secret key at boot is that all sessions are invalidated
+	
+	users = UserDB("accounts.dbm")
 	lm = LoginManager(app)
 	
-	DB = UserDB("accounts.dbm")
-	#DB.clear() #DEBUG
 	
 	@lm.user_loader
 	def user_load(id):
 		print("Loading user %s" % (id,))
-		return DB[id]
+		return users.get(id, None)
 	
 	@lm.token_loader
-	def token_load(k):
-		id = DB._key_idx[k]
-		# now look up ID in the database...
-		u = user_load(id)
-		assert u.get_auth_token() == k
+	def token_load(token):
+		try:
+			id = users._key_idx[token]
+		except KeyError:
+			return None
+		# now look up ID in the database the normal way
+		u = app.login_manager.user_callback(id) #<-- this is in prep for moving this inside of LoginLess
+		assert u.get_auth_token() == token
 		return u
-		
+	
 	ll = LoginLess(app)
 	# idea: LoginLess sets app.login_manager.token_loader, switching the view to using tokens
 	# and internally caches the tokens
@@ -174,24 +206,21 @@ def test():
                         "<form action=%(this)s method=POST><input autofocus type=text name='identity' placeholder='Tell me who you are, child.'><input type=submit style='display: none'></form>"
                         "</body></html>") % {"id": current_user.get_id(), "j": json.dumps(current_user.__dict__), "this": url_for("newaccount")}
 		if request.method == "POST":
-			app.logger.info("POSTING: %s" % (request.form['identity'],))
 			# make a new user
 			user = TokenUserMixin(request.form['identity'])
-			print("After creation:", user.__dict__)
-			DB[user.get_id()] = user
+			users[user.get_id()] = user
 			login_user(user)
 			#assert current_user is user #this is actually False: logging in causes the user to be *reloaded* (as in, from whatever lm.user_loader says to do)
 			return redirect(url_for("account"))
 			
 	@app.route("/account")
 	def account():
-		print("Account(): current_user=", current_user.__dict__)
 		return ("<html><body><h1>Account Page</h1> "
                         "Hello <em>%(id)s</em>. "
                         "<br/>Your details are: %(j)s. "
                         "<br/>Your login link is <a href=%(auth)s>%(auth)s</a>. "
                         "</body></html>") % {"id": current_user.get_id(), "j": json.dumps(current_user.__dict__),
-                                             "auth": url_for("_auth", key=current_user.get_auth_token() if current_user.get_auth_token() else "n/a")}
+                                             "auth": ll.url_for(current_user)}
 	
 	# fuck youuuuuuuuuuuuuuuu flask. in debug mode you run the werkzeug reloader which *breaks* bc it means the shelve is opened twice in one process)
 	# what the hell? is your webserver not supposed to? I guess you really really really expect *only* to use a SQL backend, eh??? FUCK YOUUU
