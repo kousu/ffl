@@ -1,3 +1,22 @@
+"""
+
+
+Future plan:
+ - pieces of this will get extracted to StaticACLs
+   which will just be a system---I guess a Flask Blueprint, probably---
+   that hooks ACLs onto every file under it, each of which has a .acl file to go with
+   and a plaintext user/groups database.
+   
+   Then plug in a static site generator (*cough*Jekyll*cough*)
+   And put this server in front to enforce the ACLs,
+   but all it does is return the files---no account management or comments.
+   
+   To be ideal, there will have to be *some* moving parts: to generate new subscriber feeds
+   (if there were no moving parts, you would need to hand-add all your friends to text files,
+    and that seems a little bit absurd)
+
+ Static sites are nice, but not every site 
+"""
 
 from flask import *
 
@@ -321,6 +340,9 @@ def editor(post=""):
 	
 	
 	if os.path.exists("_posts/" + post + ".md"):
+		perms = open("_posts/" + post + ".acl").read()
+		perms = " ".join(json.loads(perms))
+		
 		content = open("_posts/" + post + ".md").read()
 		# read the title out of the markdown
 		# the title is the first <h1> title, as far as we care
@@ -331,7 +353,8 @@ def editor(post=""):
 		live_link = None
 		content = ""
 		title = None
-	return render_template('editor.html', post_title=post, post_content=content, live_link=live_link)
+		acl = "+subscribers"
+	return render_template('editor.html', post_title=post, post_content=content, post_acl=perms, live_link=live_link)
 
 @app.before_request
 def q():

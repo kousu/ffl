@@ -191,6 +191,7 @@ class ACL(object):
 
 		# Do I need to attach
 		if not self.check(current_user, request.url_rule.endpoint, **request.view_args):
+			# XXX is hardcoding a 401 a good idea? SEO-friendly URLs give away the content of a post, and maybe that is sensitive
 			return abort(401)
 		
 	def add(self, endpoint, type, users):
