@@ -2,24 +2,58 @@
 
 {% block content %}
 
+<style>
+
+html, body, #content { height: 100% }
+
+
+</style>
 
 <script src="https://code.jquery.com/jquery-2.1.4.js"></script>
 <script src={{ url_for("static", filename="epiceditor/js/epiceditor.js") }}></script>
 <script>
 
 $(document).ready(function() {
-  editor = new EpicEditor({basePath: '/static/epiceditor'}).load();
+  editor = new EpicEditor({basePath: '/static/epiceditor', textarea: 'post_content'}).load(); //Note: intentionally global
+
+
+  function upload(cmd, callback) {
+    console.log("UPLOADING");
+    var msg = {title: document.getElementById("post_title").value,
+		content: editor.exportFile(),
+		acl:document.getElementById("post_acl").value};
+    msg.command = cmd;
+    $.post("/edit", msg, callback);
+    return false; // stop bubbling
+  }
+
+  $("#post_button").click(function() {
+    return upload("post", function() {
+      console.log("Saved post"); //TODO: handle exceptions, which will come back as json I guess
+    });
+  });
+
+  $("#draft_button").click(function() {
+    return upload("draft", function() {
+      console.log("Saved draft"); //TODO: handle exceptions, which will come back as json I guess
+    });
+  });
+
 });
+
 </script>
 
 
-<form>
-<input type=text placeholder="Title" id="post_title" />{{post_title}}</input>
-<div id="epiceditor" style="width: 50%; height: 50%"></div>
-<textarea style="display: none">{{post_content}}</textarea>
+<form style="height: 100%">
+<input type=text placeholder="Title" id="post_title" value="{{post_title}}" /></input>
+<div id="epiceditor" style="width: 100%; height: 80%"></div>
+<textarea id="post_content" style="display: none">{{post_content}}</textarea>
 <input type=text placeholder="Aspects" id="post_acl" value="+subscribers"></input>
-<button id="post">Post</button>
-<button id="draft">Save Draft</button>
+<button id="post_button">Post</button>
+<button id="draft_button">Save Draft</button>
+{% if live_link %}
+  Permalink: <a href={{ live_link }}>{{live_link}}</a>
+{% endif %}
 
 </form>
 

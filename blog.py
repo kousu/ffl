@@ -21,6 +21,7 @@ import random
 
 
 
+from utils import *
 
 
 app = Flask(__name__)
@@ -278,15 +279,34 @@ def subscribe():
 # just tested: Liferea, at least, properly handles following the auth links and getting logged in
 # so installing LoginLess and handing out https://blog.me/auth/<key>?next=/rss.xml as the login links is *precisely*
 
-@app.route("/edit")
-@app.route("/edit/<post>")
+@app.route("/edit", methods=["GET","POST"])
+@app.route("/edit/<post>", methods=["GET","POST"])
 @acl.allow(admins)
 def editor(post=""):
+	if request.method == "POST":
+		# expect JSON
+		msg = request.json #  #awesome! yay flask
+		msg = request.form #<-- actually we have to do this...
+		app.logger.debug("Received content for post '%s' with ACL '%s'", msg['title'], msg['acl'])
+		app.logger.debug(msg['content'])
+		if msg['command'] == "draft":
+			raise NotImplementedError
+		elif msg['command'] == 'post':
+			# write to disk
+			post = slugify(msg['title'])
+			with open("_posts/" + post + ".md","w") as md:
+				md.write(msg['content'])
+			with open("_posts/" + post + ".acl","w") as acl:
+				acl.write(json.dumps(msg['acl'].lower().split()))
+			
+			return json.dumps({'success': True})
 	if os.path.exists("_posts/" + post + ".md"):
+		live_link = url_for("view_post", path=post);
 		content = open("_posts/" + post + ".md").read()
 	else:
+		live_link = None
 		content = ""
-	return render_template('editor.html', post_title=post, post_content=content)
+	return render_template('editor.html', post_title=post, post_content=content, live_link=live_link)
 
 @app.before_request
 def q():
