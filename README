@@ -1,6 +1,28 @@
 Federated Friends Locking
 =========================
 
+
+## Quickstart
+
+Install the dependencies. The quickest is
+```
+sudo pip install -r requirements.txt
+```
+but doing it manually with `pacman` or `apt-get` might work better for you.
+
+Then run
+```
+python blog.py
+```
+and go [here](http://localhost:5000).
+
+
+The rest of this README is a mess right now. Skip it unless you want to see my thought process.
+
+# Explanation
+
+
+
 Semi-public posts (blog or otherwise) are very useful, socially.
 They allow engaging in the discussions on the public web,
 without all the riskiness of being totally public,
@@ -154,7 +176,7 @@ References
   <li><a href="https://github.com/aaronpk" rel="me">Github</a></li>
   <li><a href="https://google.com/+aaronpk" rel="me">Google</a></li>
   <li><a href="mailto:me@example.com" rel="me">me@example.com</a></li>
-  <li><a href="sms:+15194978477" rel="me">(503) 555-1212</a></li>
+  <li><a href="sms:+15554978477" rel="me">(503) 555-1212</a></li>
 </ul>
    each of these hrefs is an identity provider
 
