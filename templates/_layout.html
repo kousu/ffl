@@ -4,6 +4,8 @@
     {% block head %}
     <!-- <link rel="stylesheet" href="{{ url_for('static', filename='epiceditor/themes/preview/bartik.css') }}"> -->
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <script src="{{url_for("static", filename="js/jquery.js")}}"></script>
+
     <title>{{ blogtitle }} - {{ title }}</title>
     {% endblock %}
   </head>
