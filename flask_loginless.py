@@ -20,6 +20,7 @@
 from flask import *
 from flask.ext.login import *
 from flask.ext.login import login_user, logout_user, current_user, UserMixin
+from flask.ext.sslify import *
 
 import os
 from base64 import *
@@ -86,24 +87,98 @@ class LoginTokenMixin(UserMixin):
 class LoginLess(object):
 	"""
 	A Flask extension to make login less painful. Get it?
+	
+	Everybody hates accounts. Twitter, Facebook, Soundcloud,...
+	who cares? It's the worst. People invest in making accounts
+	for the sake of being able to use the services their friends
+	are using. But what about small time sites, like personal blogs?
+	These sites have no way to take advantage of identity,
+	unless they farm out identity through Disqus.
+	
+	So, the idea is: instead of a username and password (or, if
+	you're brave, an OAuth session token), give your users a key,
+	and put that key in a link, like Google Docs and Dropbox can.
+	Now, in those cases the key protects a file, whereas here
+	the key protects an account, which is a litttttle dodgier.
+	
+	The endpoint this extension creates is "/auth/<key>?next=<url>"
+	next (which is optional) gives a URL to redirect to after login.
+	Make it less painful for people who come to your site to get
+	their own personal keys: all it should take is one click and then a bookmark.
+	Tip: in your tempaltes don't call it "logging in", call it "recognized" or "known to me".
+	
+	Unfortunately it's still painful on the server side. The 'less'
+	is for the sake of for your users. Because Flask-Login is
+	database-agnostic, so is Flask-LoginLess, and this means some work.
+	It repurposes Flask-Login's User.get_auth_token() as a login key,
+	so, you need to tell it how to recover an account given this key,
+	like how you need to tell Flask-Login how to recover an account
+	given a user ID. In fact, Flask-LoginLess calls out to your
+	Flask-Login @LoginManager.token_loader, so you may already be done.
+	
+	If not, you will need to make it, and that almost certainly means
+	modifying your database scheme as well. It *is* technically possible
+	to just do something like:
+	```
+	@lm.token_loader
+	def token_load(token):
+		users = Users.query.all()
+		for user in users:
+			if user.get_auth_token() == token: return user
+		else:
+			return None
+	```
+	but that's going to be stupidly slow if you are at any kind of scale.
+	Better is:
+	```
+	@lm.token_loader
+	def token_load(token):
+		users = Users.query.search(token=token)
+		if users: return users.first()
+		else:
+			return None
+	```
+	But you will need to adapt it to your specific backend, unfortunately.
+	
+	Note also: using a GET link for changing state is specifically against
+	the w3 guidelines, the sort of bad decision that enables CSRF attacks.
+	I *think* the most that an attacker can do is a session-fixation attack,
+	except with an account: they can, behind your back, log you into an
+	account they made. If you don't notice and put secret information in that account,
+	the attacker has it.
+	So let me say this: LoginLess is explicitly intended to prove identity
+	to the server, not to prove yourself to the world.
+	The accounts behind LoginLess should afford any serious identity theft;
+	they should probably not even contain.
+	
+	As soon as someone logs in they will.
 	"""
 	
-	def __init__(self, app, only_keys = True):
+	def __init__(self, app, only_keys = True, insecure = False):
 		"""
-		app should be your Flask app
+		app should be your Flask app 
 		if only_keys is set, then LoginLess is the *only* supported login method, which means everyone
+		insecure can be set to disable Flask-sslify, but you shouldn't do this unless you really need to:
+		 it is not safe to use LoginLess without TLS
+		 it was unsafe enough to use session cookies without TLS
+		 but at least session cookies *change*. the user key doesn't, unless the admin explicitly revokes it.
+		 since LoginLess links are meant to be bookmarked (or more likely, saved to a feed reader)
+
 		"""
 		if not hasattr(app, 'login_manager'):
 			raise ValueError("You must set a Flask-Login LoginManager on your app before using Flask-LoginLess")
 		if not getattr(app.login_manager, 'token_callback', None):
 			raise ValueError("You must set a Flask-Login LoginManager.token_loader on your app before using Flask-LoginLess")
-
+		
+		insecure = True #DEBUG. TODO: DISABLE THIS
+		if not insecure:
+			SSLify(app) #TODO: check if this sets the session cookie to Secure as well
 		self.app = app
 		
 		if only_keys:
 			self.app.login_manager.login_view = None
-		app.route("/auth/<key>", "auth")(self._auth)
-		app.route("/logout", "logout")(self._logout)
+		app.route("/auth/<key>", endpoint="auth")(self._auth)
+		app.route("/logout", endpoint="logout")(self._logout)
 	
 	def _auth(self, key):
 		user = self.app.login_manager.token_callback(key)
@@ -114,6 +189,8 @@ class LoginLess(object):
 			return "You are already logged in", 401
 		
 		login_user(user)
+		# TODO: we should check that the next URL is on the same site
+		#  deny it if not (i don't have any attacks in mind per se, but there's probably a way being able to next= your way out to any site will help phishing)
 		return redirect(request.args.get("next", "/"))
 	
 	def _logout(self):
@@ -125,7 +202,17 @@ class LoginLess(object):
 		# Mitigations: make this function check a CSRF token before working?
 		#  problem: the attack is also good if you catch people when they're not logged in(which, tbh, is most people?)
 		#           and then if they ever do go over to the blog, they are logged in as the attacker
-		logout_user(current_user)
+		""" for reference: here's how github protects against logout CSRF: a random 512-bit token.
+                    also, apparently the form is independently nonced, which must be a separate subsystem that they haven't noticed
+<form accept-charset="UTF-8" action="/logout" class="logout-form" data-form-nonce="51dc6629e39b3b022b7725ae086a56885fe28895" method="post">
+<input name="authenticity_token" value="FcEVNkM7ZR8mLU1FjJAoANAbFAwZFbgB9PtfjABxTB8sUK4QbUUw1UrXrltER6X1ClfSx81x0dlWAXNwRKAFng==" type="hidden">
+            <button class="dropdown-item dropdown-signout" data-ga-click="Header, sign out, icon:logout">
+              Sign out
+            </button>
+</form>
+		with suitable CSS (as they have) it doesn't /look/ like a POST link, but it is
+		"""
+		logout_user()
 		return redirect("/")
 	
 	def url_for(self, user):
