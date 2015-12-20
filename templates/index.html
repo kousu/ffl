@@ -21,8 +21,10 @@
    Are you
    <li><a href={{ url_for("manage") }}>Owner</a></li>
    <li><a href={{ url_for("view_post_family") }}>Family</a></li>
-   <li><a href={{ url_for("view_post_friends") }}>Friends</a></li>
-   <li><a href={{ url_for("view_post_public") }}>Public</a></li>
+   <li><a href={{ url_for("view_post_friends") }}>Friends Hard</a> 
+   <a href={{ url_for("view_post", path="why-everything-sucks") }}>Friends Soft</a></li>
+   <li><a href={{ url_for("view_post_public") }}>Public Hard</a>
+   <a href={{ url_for("view_post", path="cooking-lessons") }}>Public Soft</a></li>
    <li><a href={{ url_for("view_post_default") }}>Default</a></li>
   </ul>
   

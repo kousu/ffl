@@ -9,13 +9,22 @@ from flask.ext.login import *
 from flask_loginless import *
 from flask_acl import *
 
+import markdown
+
 import os, time
 import json
 import datetime
 
+from functools import *
+
+import random
+
+
+
 
 
 app = Flask(__name__)
+app.debug = True
 app.secret_key = "bloggy" #os.urandom(50)
 
 lm = LoginManager(app)
@@ -49,7 +58,25 @@ BLOGTITLE = "Kousu's Magical Fantasy Land"
 admins = {"kousu"}
 family = {"sister", "brother", "mom", "dad", "aunt"}
 friends = {"oauth:https://facebook.com/sally", "oauth:https://facebook.com/sanchez", "mailto:jack@gmail.com"}
+randoms = {"anon2342", "anon324234"} # people who have followed us but that we have not accepted, roughly equivalent to a Friend Request that goes nowhere
 
+class public(set):
+	"this represents the infinite, universal, set"
+	def __init__(self): pass #disable the constructor
+	def __contains__(self, x): return True
+	def __str__(self): return "public"
+public = public()
+no1 = set()
+
+
+
+UserDB = admins.union(family).union(friends).union(randoms)
+subscribers = UserDB - randoms
+Groups = {"admins": admins, "family": family, "friends": friends, "subscribers": subscribers} #randoms don't get a group: you cannot give them posts. you must move them to Subscribers first.
+
+
+acl.public()
+acl.public()
 
 @app.route("/")
 @acl.public()
@@ -57,25 +84,21 @@ def index():
 	return render_template('index.html', blogtitle=BLOGTITLE)
 
 
-
-
-def database_acl(path):
-	# TODO: cache (but not memoize) this for speed
-	#  also make sure to invalidate the cache whenever path's ACLs are updated
-	perms = json.load(open(path+".acl"))
-	
-	def to_set(e):
-		if e in UserDB: return {e}
-		elif e in Groups: return Groups[e]
-		else: raise ValueError("unknown %s" % (e,))
-        
-	allows = [to_set(e[1:]) for e in perms if e[0]=="+"]
-	denies = [to_set(e[1:]) for e in perms if e[0]=="-"]
-	allows = reduce(lambda a,b: a.union(b), allows, set())
-	denies = reduce(lambda a,b: a.union(b), denies, set())
-	
-	return allows, denies
-
+# ^ this should really be reusing the code in flask_acl somehow
+# the code that composes an ACL out of sub-rules is in acl_for
+# which is right now just calling out to this
+# like, sorrrrta what I want is to call acl.allow() when I find a "+" and acl.deny() when I find a "-"
+#  idea: if I somehow worked out how to do that
+#  for that to work, I 
+# I have a caching problem (of course):
+#  how do I get the ACL data from the disk to the ACL structure
+#  and how do I do it on every request (actually, i can probably be a bit smarter: I only need to do it a) when the timestamp on the .acl file changes b) when the timestamp on the .group files change)
+# idea 1: add an acl.clear(request.url_route.endpoint)
+# okay, next: how do I reload?
+# well, 
+# next: do I want to keep the ACL as a materialized set, one per view
+#    or do I keep it as a list of predicates?
+#    I could also keep it as a list of sets, which is probably easier on the memory since views can share
 
 # I sort of like sets and materializing the whole thing simply because they let me write acl_for(), which is very useful for UI: a user
 #  but maybe the more common UI case is "does X have access" and that can be done even if choose not to materialize...
@@ -91,15 +114,83 @@ def database_acl(path):
 #        use thunks
 # another awkwardness about sets is they can't be parameterized on the view's arguments
 
+
+def load_post_acls(path):
+	" load the ACLs for view "
+	" this is soooooooooooooooooooooo kludgy "
+	# XXX design problem!
+	# my ACLs
+	# if my ACLs are predictates, then the predicates can handle
+	# if my ACLs are sets, then I need to record an ACL for each (endpoint, view_args) combination
+	# and since there's no way I can know these in advance....
+	# bah
+	# let's just see if I can get this working
+
+	app.logger.debug("Loading ACLs for %s", path)
+	
+	# TODO: cache (but not memoize) this for speed
+	# TODO: switch to yaml instead of json. it's more human-readable.
+	#  also make sure to invalidate the cache whenever path's ACLs are updated
+	
+	allows, denies = set(), set() # <-- default deny
+	try:
+		perms = json.load(open("_posts/"+path+".acl"))
+		
+		app.logger.debug("perms = %s", perms)
+		if perms == "public":
+			allows = public_set
+		elif perms == "private":
+			pass
+		else:
+			app.logger.debug("loading perms from file")
+			
+			def to_set(e):
+				if e in UserDB: return {e}
+				elif e in Groups: return Groups[e]
+				else:
+					app.logger.warn("Unknown user %s", e)
+					return {e} #DEBUG : accept unknown users off disk
+					#return set()
+
+			for rule in perms:
+				type, principle = rule[0], rule[1:]
+				principle = to_set(principle)
+				if type == "+":
+					allows.update(principle)
+				elif type == "-":
+					denies.update(principle)
+				else:
+					app.logger.warn("Invalid ACL rule %s on %s", rule, path)
+	except Exception as exc:
+		app.logger.info("Failed to load ACLs for %s. Defaulting to private.", path)
+		app.logger.debug("%s", exc)
+		raise
+		pass
+	
+	return allows, denies
+
 # TODO:
 #  the idea is that some pages (/index, /manage) will have fixed permissions coded at the app level
 #  but for everything under /post, we delegate to the external, user-controlled, database
 @app.route("/post/<path:path>")
-@acl.allow(lambda path: database_acl(os.path.join("_posts",path))[0])
-@acl.deny(lambda path: database_acl(os.path.join("_posts",path))[1])
+@acl.allow(admins)
+@acl.allow(lambda user, path: user.get_id() in load_post_acls(path)[0])
+@acl.deny (lambda user, path: user.get_id() in load_post_acls(path)[1])
 def view_post(path):
-	return render_template('post.html', blogtitle=BLOGTITLE, title=path,
-		#content=Markup(open(os.path.join("_posts", path)).read()),
+
+	if os.path.exists(os.path.join("_posts", path + ".html")):
+		content = open(os.path.join("_posts", path + ".html")).read()
+	elif os.path.exists(os.path.join("_posts", path + ".md")):
+		# note: there is a Flask-Markdown extension, which gives a filter you can use in templates (like `{{ content | markdown }}` but this is dumb)
+		content = open(os.path.join("_posts", path + ".md")).read()
+		content = markdown.Markdown().convert(content) #TODO: cache the Markdown instance
+	else:
+		# doesn't exist!
+		return abort(404)
+	
+	content = Markup(content) #mark the content as 'safe' against XSS, so that it doesn't
+	return render_template('post.html', blogtitle=BLOGTITLE, title="",
+		content=content,
 		comments=[])
 
 
@@ -157,10 +248,39 @@ def login(user_id):
 
 @app.route("/logout")
 @acl.public()
-def logout():
+def _logout():
 	logout_user()
 	return redirect(url_for("index"))
 
+@app.route("/rss.xml")
+def rss():
+	raise NotImplementedError
+
+@app.route("/subscribe")
+@acl.public()
+def subscribe():
+	if current_user.get_id():
+		return "Already subscribed as %s" % (current_user.get_id(),), 403
+	
+	
+	# TODO: put interstitials in here which
+	# a) let you select your identity method (pseudoanon (like this), email, sms, 
+	# b) guide you through completing -- which in some cases (sms, email) is not direct -- or is OAuth or OpenID which do lead you directly back
+	# c) then create the account and give out the link
+	
+	# make a random, anonymous user
+	login_user(User("anon%08d" % random.randint(0, 10**8), "Anonymous Coward"))
+	global randoms
+	randoms |= {current_user.get_id()}
+	
+	return "Add this link to your feed reader: <a href='%(url)s?next=%(rss)s'>RSS</a>" % {"url": url_for("auth", key=current_user.get_auth_token()), "rss": url_for("rss")}
+
+# just tested: Liferea, at least, properly handles following the auth links and getting logged in
+# so installing LoginLess and handing out https://blog.me/auth/<key>?next=/rss.xml as the login links is *precisely*
+
+@app.before_request
+def q():
+	app.logger.debug("%s from %s", request.full_path, current_user.get_id())
 
 #Inspiration: petnames
 # http://www.skyhunter.com/marcs/petnames/IntroPetNames.html
@@ -170,6 +290,13 @@ def logout():
 # 
 
 if __name__ == '__main__':
+	
+	# XXX just playing
+	import flask_loginless
+	@lm.token_loader
+	def fail(token): raise NotImplementedError
+	flask_loginless.LoginLess(app)
+	
 	if __debug__:
 		app.run(debug=True, use_reloader=False)
 	else:
