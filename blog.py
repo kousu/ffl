@@ -9,7 +9,7 @@ from flask.ext.login import *
 from flask_loginless import *
 from flask_acl import *
 
-import markdown
+import markdown, bleach
 
 import os, time
 import json
@@ -185,6 +185,8 @@ def view_post(path):
 		# note: there is a Flask-Markdown extension, which gives a filter you can use in templates (like `{{ content | markdown }}` but this is dumb)
 		content = open(os.path.join("_posts", path + ".md")).read()
 		content = markdown.Markdown(extensions=['markdown.extensions.fenced_code']).convert(content) #TODO: cache the Markdown instance
+		content = bleach.clean(content, bleach.ALLOWED_TAGS+["h1","h2","h3","pre","p"]) # sanitize untrusted input!
+		# hmmm. this is.
 	else:
 		# doesn't exist!
 		return abort(404)
