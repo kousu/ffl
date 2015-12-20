@@ -1,7 +1,7 @@
 {% extends "_layout.html" %}
 {% block content %}
   <h1>{{ blogtitle }}</h1>
-  
+
   <section>
   <p>This is a prototype blog engine, exploring wrapping ACLs around distributed identity.</p>
 
@@ -10,12 +10,37 @@
      Think Facebook "Lists", G+ "Circles", or Diaspora "Aspects", but actually distributed fully.
 
      It should be as easy, as exciting, and as functional as accepting a friend request.
-     Except here, the process is someone clicks "<a href=/friend>Subscribe</a>", and starts receiving your public activity,
+     Except here, the process is someone clicks "<a href=/subscribe>Subscribe</a>", and starts receiving your public activity,
        and they are accepted if you choose to put them in groups (they don't get a notification that you've accepted them, except that they start seeing locked posts).
      Keeping records locally is the <em>distributed part</em>; having groups is the <em>ACL part</em>.
   </p>
 
   <p>Fuck the silos. We should---at least have the option to---<a href="https://indiewebcamp.com/own_your_data">own our data</a>.</p>
+  </section>
+  
+  <section>
+  <ul style='display: inline-block; width: 30%'>
+   Posts:
+   <li><a href={{ url_for("manage") }}>Owner</a>
+       <a href={{ url_for("editor") }}>[New Post]</a></li>
+   <li><a href={{ url_for("view_post_family") }}>Family</a></li>
+   <li><a href={{ url_for("view_post_friends") }}>Friends Hard</a> 
+   <a href={{ url_for("view_post", path="why-everything-sucks") }}>Friends Soft</a></li>
+   <li><a href={{ url_for("view_post_public") }}>Public Hard</a>
+   <a href={{ url_for("view_post", path="cooking-lessons") }}>Public Soft</a></li>
+   <li><a href={{ url_for("view_post_default") }}>Default</a></li>
+  </ul>
+  
+  <ul style='display: inline-block; width: 30%'>
+   Login as
+   <li><a href={{ url_for("login", user_id="kousu") }}>Owner</a></li>
+   <li><a href={{ url_for("login", user_id="sister") }}>Family</a></li>
+   <li><a href={{ url_for("login", user_id="mailto:jack@gmail.com") }}>Friend</a></li>
+   <li><a href={{ url_for("logout") }}>Public</a></li>
+  </ul>
+  </section>
+  
+  <section>
 
   <h2>Design</h2>
 
@@ -50,7 +75,7 @@
    </p>
   
   <p>    For now, all identities are simply pseudoanonymous.
-     But when this is done, people will be able to use any identity they like: email, facebook, twitter, github, livejournal, even their SMS number maybe (<a href=http://indieauth.com</a>indieauth</a> has this working, so it can't be that expensive).
+     But when this is done, people will be able to use any identity they like: email, facebook, twitter, github, livejournal, even their SMS number maybe (<a href=http://indieauth.com>indieauth</a> has this working, so it can't be that expensive).
      <a href=http://psa.matiasaguirre.net/>python-social-auth</a> is the hammer for this job.
 
      </p>
@@ -77,29 +102,10 @@
   <p>Other important UX points are: making sure to communicate to subscribers that the links they are given are equivalent to sharing gossip,
       and so that their links can and will be revoked if they are shared. LJ had reasonably prominent lock icons.
       Making a good groups editor is important.
+      Also, not calling the accounts here "accounts": people hate having accounts to keep track of;
+      call them "keys" or "petnames" or something.
      </p>
   
-  </section>
-  <section>
-  <ul style='display: inline-block; width: 30%'>
-   Posts:
-   <li><a href={{ url_for("manage") }}>Owner</a>
-       <a href={{ url_for("editor") }}>[New Post]</a></li>
-   <li><a href={{ url_for("view_post_family") }}>Family</a></li>
-   <li><a href={{ url_for("view_post_friends") }}>Friends Hard</a> 
-   <a href={{ url_for("view_post", path="why-everything-sucks") }}>Friends Soft</a></li>
-   <li><a href={{ url_for("view_post_public") }}>Public Hard</a>
-   <a href={{ url_for("view_post", path="cooking-lessons") }}>Public Soft</a></li>
-   <li><a href={{ url_for("view_post_default") }}>Default</a></li>
-  </ul>
-  
-  <ul style='display: inline-block; width: 30%'>
-   Login as
-   <li><a href={{ url_for("login", user_id="kousu") }}>Owner</a></li>
-   <li><a href={{ url_for("login", user_id="sister") }}>Family</a></li>
-   <li><a href={{ url_for("login", user_id="mailto:jack@gmail.com") }}>Friend</a></li>
-   <li><a href={{ url_for("logout") }}>Public</a></li>
-  </ul>
   </section>
 {% endblock %}
 
