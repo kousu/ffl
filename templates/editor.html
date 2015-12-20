@@ -31,26 +31,21 @@ $(document).ready(function() {
   // since it's empty, we get the "Untitled" 
 
   function upload(cmd, callback) {
-    console.log("UPLOADING");
     var msg = {content: editor.exportFile(),
 		acl: $("#post_acl").val()};
     msg.command = cmd;
-    $.post("/edit", msg, callback);
+    $.post("/edit/", msg, callback);
     return false; // stop bubbling
   }
   Upload = upload
 
   $("#post_button").click(function() {
     return upload("post", function(resp) {
-      R = resp;
       resp = JSON.parse(resp);
-      console.log(resp);
-      console.log(resp.success);
-      console.log(resp.success == true);
       if(resp.success == true) {
         console.log("Saved post"); //TODO: handle exceptions, which will come back as json I guess
         if(resp.goto != "") {
- console.log("jumping ship");
+           console.log("jumping ship");
            location = resp.goto;
         }
       }

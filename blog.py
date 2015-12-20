@@ -287,7 +287,7 @@ def extract_title(md):
 		return title[0]
 
 
-@app.route("/edit", methods=["GET","POST"])
+@app.route("/edit/", methods=["GET","POST"])
 @app.route("/edit/<post>", methods=["GET","POST"])
 @acl.allow(admins)
 def editor(post=""):
