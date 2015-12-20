@@ -278,6 +278,16 @@ def subscribe():
 # just tested: Liferea, at least, properly handles following the auth links and getting logged in
 # so installing LoginLess and handing out https://blog.me/auth/<key>?next=/rss.xml as the login links is *precisely*
 
+@app.route("/edit")
+@app.route("/edit/<post>")
+@acl.allow(admins)
+def editor(post=""):
+	if os.path.exists("_posts/" + post + ".md"):
+		content = open("_posts/" + post + ".md").read()
+	else:
+		content = ""
+	return render_template('editor.html', post_title=post, post_content=content)
+
 @app.before_request
 def q():
 	app.logger.debug("%s from %s", request.full_path, current_user.get_id())

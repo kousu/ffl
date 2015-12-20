@@ -1,0 +1,26 @@
+{% extends "_layout.html" %}
+
+{% block content %}
+
+
+<script src="https://code.jquery.com/jquery-2.1.4.js"></script>
+<script src={{ url_for("static", filename="epiceditor/js/epiceditor.js") }}></script>
+<script>
+
+$(document).ready(function() {
+  editor = new EpicEditor({basePath: '/static/epiceditor'}).load();
+});
+</script>
+
+
+<form>
+<input type=text placeholder="Title" id="post_title" />{{post_title}}</input>
+<div id="epiceditor" style="width: 50%; height: 50%"></div>
+<textarea style="display: none">{{post_content}}</textarea>
+<input type=text placeholder="Aspects" id="post_acl" value="+subscribers"></input>
+<button id="post">Post</button>
+<button id="draft">Save Draft</button>
+
+</form>
+
+{% endblock %}
