@@ -10,7 +10,10 @@ from flask_loginless import *
 from flask_acl import *
 
 import os, time
+import json
 import datetime
+
+
 
 app = Flask(__name__)
 app.secret_key = "bloggy" #os.urandom(50)
@@ -54,12 +57,46 @@ def index():
 	return render_template('index.html', blogtitle=BLOGTITLE)
 
 
+
+
+def database_acl(path):
+	# TODO: cache (but not memoize) this for speed
+	#  also make sure to invalidate the cache whenever path's ACLs are updated
+	perms = json.load(open(path+".acl"))
+	
+	def to_set(e):
+		if e in UserDB: return {e}
+		elif e in Groups: return Groups[e]
+		else: raise ValueError("unknown %s" % (e,))
+        
+	allows = [to_set(e[1:]) for e in perms if e[0]=="+"]
+	denies = [to_set(e[1:]) for e in perms if e[0]=="-"]
+	allows = reduce(lambda a,b: a.union(b), allows, set())
+	denies = reduce(lambda a,b: a.union(b), denies, set())
+	
+	return allows, denies
+
+
+# I sort of like sets and materializing the whole thing simply because they let me write acl_for(), which is very useful for UI: a user
+#  but maybe the more common UI case is "does X have access" and that can be done even if choose not to materialize...
+# TODO: figure out if it's more common for allowed or denied to shortcircuit and therefore which of any/all to use (one can be converted to the other by de moivre with suitable application of nots)
+# allowed = any(current_user.get_id() in set(pred(**request.view_args)) for pred in allows) and not any(current_user.get_id() in set(pred(**request.view_args)) for pred in denies)
+#  lets see, any() will shortcircuit if one passes. one will pass if the person is in the denied set. but mostly people are not in denied sets, probably?
+#  or any will pass if user is in the allowed set, but again these sets are small comparitively?
+# TODO: cache. but be careful not to introduce TOCTOUs!!
+
+# so: an awkwardness about using sets is that they're immutable, which means that the sets they cover get fixed at @acl.{allow,deny} time, instead of at runtime
+# fixes: use lists instead
+#        use collections.MutableSet
+#        use thunks
+# another awkwardness about sets is they can't be parameterized on the view's arguments
+
 # TODO:
 #  the idea is that some pages (/index, /manage) will have fixed permissions coded at the app level
 #  but for everything under /post, we delegate to the external, user-controlled, database
 @app.route("/post/<path:path>")
-#@acl(lambda user, path: database_acl(user, path))
-@acl.public
+@acl.allow(lambda path: database_acl(os.path.join("_posts",path))[0])
+@acl.deny(lambda path: database_acl(os.path.join("_posts",path))[1])
 def view_post(path):
 	return render_template('post.html', blogtitle=BLOGTITLE, title=path,
 		#content=Markup(open(os.path.join("_posts", path)).read()),
@@ -72,7 +109,8 @@ def view_post(path):
 # - 
 
 @app.route("/post/family")
-@acl(lambda user: user.get_id() in family)
+@acl.allow(admins)
+@acl.allow(family)
 def view_post_family():
 	return render_template('post.html', blogtitle=BLOGTITLE, title="Family-Accessible Post")
 
@@ -84,14 +122,13 @@ def view_post_family():
 # 
 
 @app.route("/post/friends")
-#@acl.allow(admins)  #maybe let the ACLs stack? 
-@acl(lambda user: user.get_id() in friends)
+@acl.allow(admins)
+@acl.allow(friends)
 def view_post_friends():
 	return render_template('post.html', blogtitle=BLOGTITLE, title="Friend-Accessible Post")
 
 @app.route("/post/public")
-#@acl(lambda user: True)
-#@acl.public
+@acl.public
 def view_post_public():
 	return render_template('post.html', blogtitle=BLOGTITLE, title="Public-Accessible Post")
 
@@ -101,7 +138,7 @@ def view_post_default():
 
 
 @app.route("/manage")
-@acl(lambda user: user.get_id() in admins)
+@acl.allow(admins)
 def manage():
 	if request.method == "POST":
 		# ... handle stuff
