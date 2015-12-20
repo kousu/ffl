@@ -4,18 +4,35 @@
 Future plan:
  - pieces of this will get extracted to StaticACLs
    which will just be a system---I guess a Flask Blueprint, probably---
-   that hooks ACLs onto every file under it, each of which has a .acl file to go with
-   and a plaintext user/groups database.
+   that hooks ACLs onto every file under it, each of which has a
+   .acl file to go with and a plaintext user/groups database.
    
-   Then plug in a static site generator (*cough*Jekyll*cough*)
-   And put this server in front to enforce the ACLs,
-   but all it does is return the files---no account management or comments.
+   Then plug in a static site generator (*cough*Jekyll*cough*) with
+   this server in front to enforce the ACLs but nothing more: no moving parts (i.e. no state).
    
    To be ideal, there will have to be *some* moving parts: to generate new subscriber feeds
    (if there were no moving parts, you would need to hand-add all your friends to text files,
     and that seems a little bit absurd)
 
- Static sites are nice, but not every site 
+ - Static sites are nice, but not every site wants to be static
+"""
+
+"""
+TODO
+
+Security:
+- [ ] Directory traversal is definitely possible in a lot of places. I'm a little bit surprised Flask doesn't stomp that in the nuts.
+- [ ] Give 404 instead of 401 for ACL failures, but only on view_post: post titles give away secrets, sometimes, so we want to do our best to avoid leaking what we can.
+
+UI:
+- [ ] Use a <textarea> editor so that if javascript isn't running the posts can still be edited, just not as smoothly
+- [ ] Put the editor inline on the post page: clicking "Edit"
+  (hmmm how well does this work without javascript I wonder... is javascript a fair assumption?)
+  --- EpicEditor is pretty javascript heavy, but there's 
+- [ ] A publish date widget. New posts get now, edited posts get set to their old date.
+
+Testing:
+- [ ] Write some unit tests!
 """
 
 from flask import *
@@ -44,7 +61,7 @@ from utils import *
 
 
 app = Flask(__name__)
-app.debug = True
+#app.debug = True
 app.secret_key = "bloggy" #os.urandom(50)
 
 lm = LoginManager(app)
@@ -52,6 +69,7 @@ lm = LoginManager(app)
 acl = ACL(app)
 
 class User(LoginTokenMixin, UserMixin):
+	"this is a really silly user class. it has no consistency checking at all"
 	@classmethod
 	def reload(cls, id):
 		display_name = id.title()

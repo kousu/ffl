@@ -157,6 +157,11 @@ Online Markdown editors:
  the top of the pack seem to be:
  -https://code.google.com/p/pagedown/wiki/PageDown (aka StackEdit)
  -https://oscargodson.github.io/EpicEditor/
+ - http://www.codingdrama.com/bootstrap-markdown/ --- has an excellent trick: *any* html tag can become a markdown block
+    and can also work around textareas
+    which is good for fallback...
+   http://markitup.jaysalvat.com/home/ also works on textareas, but bootstrap-markdown looks cleaner
+    anyway, basing on a textarea is probably a better plan because then we can design restricted-first
  -Dillinger, but it's too bloated for my taste
  - http://hallojs.org/demo/markdown/
  - https://github.com/cangelis/jquery-markdown
