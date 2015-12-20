@@ -184,7 +184,7 @@ def view_post(path):
 	elif os.path.exists(os.path.join("_posts", path + ".md")):
 		# note: there is a Flask-Markdown extension, which gives a filter you can use in templates (like `{{ content | markdown }}` but this is dumb)
 		content = open(os.path.join("_posts", path + ".md")).read()
-		content = markdown.Markdown().convert(content) #TODO: cache the Markdown instance
+		content = markdown.Markdown(extensions=['markdown.extensions.fenced_code']).convert(content) #TODO: cache the Markdown instance
 	else:
 		# doesn't exist!
 		return abort(404)
