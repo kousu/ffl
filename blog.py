@@ -355,7 +355,18 @@ def editor(post=""):
 			
 			resp = {'success': True} #TODO: handle the case where the link
 			if slug != post:
+				# a rename happened
+				
+				# get rid of the old copy
+				try: os.unlink("_posts/" + post + ".md")
+				except: pass
+				try: os.unlink("_posts/" + post + ".acl")
+				except: pass
+				
+				# tell the browser to jump
+				# TODO: do the thing where you change the URL without reloading the page
 				resp['goto'] = url_for("editor", post=slug);
+			
 			return json.dumps(resp)
 	
 	
