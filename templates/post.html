@@ -1,4 +1,11 @@
 {% extends "_layout.html" %}
+{% block nav %}
+  {% if g.acl.check(current_user, "editor", post=request.view_args['path']) %}
+  <a href={{url_for("editor", post=request.view_args['path'])}}>[Edit]</a>
+  {% endif %}
+  {{ super() }}
+{% endblock %}
+
 {% block content %}
   <h1>{{ title }}</h1>
   <div id='post'>

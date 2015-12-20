@@ -11,12 +11,14 @@
   </head>
   <body>
     <nav id='controls' style='text-align: right'>
+    {% block nav %}
       {% if current_user.is_authenticated %}
         <a href="/account">[{{ current_user.display_name }}]</a> 
         <a href={{ url_for("logout") }}>[Logout]</a> 
       {% else %}
         <a href="/subscribe">[Subscribe]</a>
       {% endif %}
+    {% endblock %}
     </nav>
 
     <div id="content">{% block content %}{% endblock %}</div>
