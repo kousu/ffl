@@ -233,8 +233,10 @@ def test():
 			return None
 	
 	ll = LoginLess(app)
-	# idea: LoginLess sets app.login_manager.token_loader, switching the view to using tokens
-	# and internally caches the tokens
+	
+	#@app.before_request
+	#def q(): #DEBUG
+	#	print("users =", pformat(dict(users)), pformat(users._key_idx))
 	
 	@app.route("/")
 	def index():
@@ -251,12 +253,15 @@ def test():
                         "</body></html>") % {"id": current_user.get_id(), "j": json.dumps(current_user.__dict__), "this": url_for("newaccount")}
 		if request.method == "POST":
 			# make a new user
+			if request.form['identity'] in users:
+				# XXX should this give a different HTTP error ? It should be a 4xx code, but nothing seems appropriate.
+				return "<html><body><h1>Account taken</h1><em>%(id)s</em> already taken.</body></html>" % {"id": request.form['identity']}
 			user = TokenUserMixin(request.form['identity'])
 			users[user.get_id()] = user
 			login_user(user)
 			#assert current_user is user #this is actually False: logging in causes the user to be *reloaded* (as in, from whatever lm.user_loader says to do)
 			return redirect(url_for("account"))
-			
+	
 	@app.route("/account")
 	def account():
 		return ("<html><body><h1>Account Page</h1> "
