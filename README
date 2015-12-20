@@ -64,7 +64,38 @@ but maybe we could allow people to reassert their auths
 
 scraps
 ------
-(( theme: use itsdangerous to do the syncookies trick: avoid as much state as possible by sending state as a base64'd-json with a MAC on the end ))
+
+side idea: HTTP auth is broken, both digest and the challenge-response form
+ but you could do the same idea but stronger---using hmac-sha2 instead of md5---with a bit of javascript (actually, with sjcl)
+ and you could use privnote's trick of hiding a key in the #-mark anchor bit so that browsers never transmit the key
+ in detail:
+ your key link is site.com/auth/<userid>#<key>
+ this page downloads sjcl and some javascript and a challenge string C (e.g. in a cookie), you compute H(k, C), put it in a cookie (which you can do from javascript, right?) and send it back; that cookie is then your auth token
+  attacks: if someone can script inject (eg if you're not using HTTPS, or maybe XSS) then they can get the key and relay it to themselves
+
+Really, the problem is the sign in step. That's what I'm trying to eliminate.
+ The architectures already in place solve most of this.
+ Really what I want
+ HTTP auth (Basic and Digest) are no good. Basic auth is a joke --- it transmits the password in the clear
+  Digest auth is vulnerable to downgrade attacks (pushing the auth to basic) which
+  and it only uses MD5, which is dead, but cannot be removed due to stupid.
+ also the UI is super shitty: 
+
+ so basically cookies are better
+
+my third idea is to look at the referrer header: in order to access /<x> you MUST access /<auth>/<x> first, and then
+ either I record something in the (internal) Session or
+ I reparse the Referer header (I could dig out Flask's route-matching subroutine, but I suspect it's not part of the public API...)
+
+the problem with a cookie it only auths
+
+
+
+
+I like capabilities because they are novel to me.
+
+
+(( theme: use itsdangerous to do the syncookies trick: avoid keeping as much state as possible by making the client store it for us. send them base64'd-json with a MAC on the end ))
 
 
 (( point: make sure not to fail open!! we need to prefer locked to unlocked ))
@@ -96,3 +127,46 @@ UX points
   - the choices are "Public" or any set combination of groups (notated with +s and -s); also each subscriber is implicitly in a group of one, so that you can + or - individual people
   - since i don't necessarily want to tie this to any framework, i wonder if there can be and AJAX widget you drop on the post editor that handles this?
 - if you could integrate your pre-existing PIM, especially the pre-existing PIM groups
+
+
+
+
+References
+==========
+
+* http://indiewebcamp.com/ is a scattered working group of people very much in this direction
+  right now they have:
+  * a protocol "IndieAuth": 
+    on your website's homepage (whatever GET / HTTP/1.1 on port 80/443 gives)
+    put 'rel=me' links:
+ <ul>
+  <li><a href="https://twitter.com/aaronpk" rel="me">@aaronpk on Twitter</a></li>
+  <li><a href="https://github.com/aaronpk" rel="me">Github</a></li>
+  <li><a href="https://google.com/+aaronpk" rel="me">Google</a></li>
+  <li><a href="mailto:me@example.com" rel="me">me@example.com</a></li>
+  <li><a href="sms:+15194978477" rel="me">(503) 555-1212</a></li>
+</ul>
+   each of these hrefs is an identity provider
+
+BUT: IndieAuth requires subscribers to do some work: namely, put this up online
+ which means they need to have a domain and a webserver and HTML knowledge
+ and also reveal all these identity things publically
+ (kinda of cute: you can connect)
+
+  * some principles
+  * a bunch of ad hoc software which can syndicate personal blogs to the major services
+    * including some Wordpress plugins
+
+ / http://indiewebify.me / indiecert.net
+
+
+* BrowserID (aka Mozilla Persona)
+* WebID (dead?)
+* http://browserauth.net/
+
+
+
+
+Jekyll??
+ - comments in Jekyll:
+   http://www.hezmatt.org/~mpalmer/blog/2011/07/19/static-comments-in-jekyll.html 
