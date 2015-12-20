@@ -1,0 +1,24 @@
+<!doctype html>
+<html>
+<head>
+<title>{{ blogtitle }} | {{ title }}</title>
+</head>
+<body>
+<nav id='controls' style='text-align: right'> <!-- TODO: better css -->
+{% if current_user.is_authenticated %}
+  <a href="/account"}>[{{ current_user.display_name }}]</a> 
+  <a href={{ url_for("logout") }}>[Logout]</a> 
+{% else %}
+  <a href="/friend">[Friend]</a>
+{% endif %}
+</nav>
+
+<div id='content'>
+  <h1>{{ title }}</h1>
+  <div id='post'>
+    {{ content }}
+  </div>
+  <!-- comments go here ... -->
+</div>
+</body>
+</html>
