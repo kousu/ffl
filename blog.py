@@ -52,7 +52,7 @@ friends = {"oauth:https://facebook.com/sally", "oauth:https://facebook.com/sanch
 
 
 @app.route("/")
-@acl.public
+@acl.public()
 def index():
 	return render_template('index.html', blogtitle=BLOGTITLE)
 
@@ -128,7 +128,7 @@ def view_post_friends():
 	return render_template('post.html', blogtitle=BLOGTITLE, title="Friend-Accessible Post")
 
 @app.route("/post/public")
-@acl.public
+@acl.public()
 def view_post_public():
 	return render_template('post.html', blogtitle=BLOGTITLE, title="Public-Accessible Post")
 
@@ -149,14 +149,14 @@ def manage():
 
 # XXX DEBUG: this lets anyone login as anyone. It's for *TESTING* only. It's a giant, obvious, backdoor.
 @app.route("/login/<user_id>")
-@acl.public
+@acl.public()
 def login(user_id):
 	login_user(app.login_manager.user_callback(user_id))
 	app.logger.debug("Logged in %s as %s", user_id, current_user.get_id())
 	return redirect(url_for("index"))
 
 @app.route("/logout")
-@acl.public
+@acl.public()
 def logout():
 	logout_user()
 	return redirect(url_for("index"))

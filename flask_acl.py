@@ -74,9 +74,15 @@ def acl_for(endpoint, **kwargs):
 	
 	# find the current app
 	app = _app_ctx_stack.top.app
+	_ACL = app.acl._acls.get(endpoint, [])
+	
+	# special-cases
+	if _ACL == ACL.PUBLIC: return ACL.PUBLIC
+	elif _ACL == ACL.PRIVATE or not ACL: return ACL.PRIVATE
+	
 	
 	allows = denies = set()
-	for type, gen in app.acl._acls[endpoint]:
+	for type, gen in _ACL:
 		_u = gen(**request.view_args)
 		app.logger.debug("acl_for(%s): _u = %s", endpoint, _u)
 		if type == ACL.ALLOW:
@@ -135,6 +141,8 @@ class ACL(object):
 	# magic constants
 	ALLOW = "allow"
 	DENY = "deny"
+	PUBLIC = "public"
+	PRIVATE = "private"
 	
 	def __init__(self, app):
 		if not hasattr(app, 'login_manager'):
@@ -147,25 +155,46 @@ class ACL(object):
 		self._acls = {} #indexed by endpoint name
 	
 	def _check_acl(self, *args, **kwargs):
+		if not request.url_rule: return #apparently, before_requests are called even if there is no route found
+		
 		self._app.logger.debug("_check_acl: %s, %s", request.method, request.path)
 		self._app.logger.debug("_check_acl: args=%s, kwargs=%s", args, kwargs)
 		self._app.logger.debug("_check_acl: endpoint: %s, viewargs = %s", request.url_rule.endpoint, request.view_args)
+
 		# Do I need to attach
-		if current_user.get_id() not in acl_for(request.url_rule.endpoint):
-			return abort(401)
+		A = acl_for(request.url_rule.endpoint)
+		if A == self.PUBLIC: return
+		elif A == self.PRIVATE: return abort(401)
+		elif current_user.get_id() not in A: return abort(401)
 	
 	def _record_acl(self, view, endpoint, type, users):
-		if type not in [self.ALLOW, self.DENY]: raise ValueError("Invalid ACL rule type.")
-		if endpoint is None: endpoint = _endpoint_from_view_func(view)
-		self._acls.setdefault(endpoint, [])
-		if not callable(users):
-			# assume users is a set-like thing, and wrap it to be a callable that 'generates' it, so that we don't need to special-case this later in _check_acl
-			if not hasattr(users, '__iter__'):
-				raise TypeError("Users must be either a sequence or a callable to generate that sequence at request-time.")
-			_users_set = users
-			users = lambda *args, **kwargs: _users_set
-		self._acls[endpoint].append((type, users))
-
+		if type not in [self.PUBLIC, self.ALLOW, self.DENY, self.PRIVATE]:
+			raise ValueError("Invalid ACL rule type.")
+		
+		if endpoint is None:
+			endpoint = _endpoint_from_view_func(view)
+		
+		if endpoint in self._acls and self._acls[endpoint] in [self.PUBLIC, self.PRIVATE]:
+			raise ValueError("%s has had its ACL fixed to %s. Cannot append new ACL rule." % (endpoint, self._acls[endpoint]))
+		
+		if type == self.PUBLIC:
+			self._acls[endpoint] = self.PUBLIC
+		elif type == self.PRIVATE:
+			self._acls[endpoint] = self.PRIVATE
+		else:
+			self._acls.setdefault(endpoint, [])
+			if not callable(users):
+				# assume users is a set-like thing, and wrap it to be a callable that 'generates' it, so that we don't need to special-case this later in _check_acl
+				if not hasattr(users, '__iter__'):
+					raise TypeError("Users must be either a sequence or a callable to generate that sequence at request-time.")
+				_users_set = users
+				users = lambda *args, **kwargs: _users_set
+			
+			self._acls[endpoint].append((type, users))
+	
+	
+	## Public API: decorators
+	
 	def allow(self, users, endpoint=None): #it's awkward
 		def decorator(view):
 			self._record_acl(view, endpoint, self.ALLOW, users)
@@ -177,15 +206,19 @@ class ACL(object):
 			self._record_acl(view, endpoint, self.DENY, users)
 			return view
 		return decorator
-
 		
-	def private(self, view):
+	def private(self, endpoint=None):
 		"Make the given view totally private. i.e. skip ACL checking and just deny"
-		return self.deny(lambda **kwargs: True)(view)
+		
+		def decorator(view):
+			self._record_acl(view, endpoint, self.PRIVATE, None)
+			return view
+		return decorator
 	
-	def public(self, view):
+	def public(self, endpoint=None):
 		"Make the given viewable by anyone. But this doesn't totally disable ACL checking: a .deny() can override this for specific people, though that would"
-		# ... hm.
-		# hmm
-		return self.allow(lambda **kwargs: True)(view)
+		def decorator(view):
+			self._record_acl(view, endpoint, self.PUBLIC, None)
+			return view
+		return decorator
 	
