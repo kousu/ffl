@@ -14,23 +14,48 @@ html, body, #content { height: 100% }
 <script>
 
 $(document).ready(function() {
-  editor = new EpicEditor({basePath: '/static/epiceditor', textarea: 'post_content'}).load(); //Note: intentionally global
-
+  editor = new EpicEditor({basePath: '/static/epiceditor',
+                          textarea: 'post_content',
+                          button: { bar: "show" },
+                          focusOnLoad: true,
+                          file: { defaultContent: "# Untitled\n\n\n" },
+                          theme: {preview: "themes/preview/bartik.css"}
+                         }).load(); //Note: intentionally global
+  // wipe localstorage: it's a nuisance that other posts can show up
+  // so just ignore this feature
+  // getting it to work nicely would be awesome, though:
+  // work on you drafts entirely offline and then post them when you get signal, with nothing but a phone and a browser
+  /*editor.remove('epiceditor'); //
+  editor.open('epiceditor'); // and then we need to reopen the now-empty file
+  editor.unload();
+  editor.load();*/
+  // since it's empty, we get the "Untitled" 
 
   function upload(cmd, callback) {
     console.log("UPLOADING");
-    var msg = {title: document.getElementById("post_title").value,
-		content: editor.exportFile(),
-		acl:document.getElementById("post_acl").value};
+    var msg = {content: editor.exportFile(),
+		acl: $("#post_acl").val()};
     msg.command = cmd;
     $.post("/edit", msg, callback);
     return false; // stop bubbling
   }
+  Upload = upload
 
   $("#post_button").click(function() {
-    return upload("post", function() {
-      console.log("Saved post"); //TODO: handle exceptions, which will come back as json I guess
-    });
+    return upload("post", function(resp) {
+      R = resp;
+      resp = JSON.parse(resp);
+      console.log(resp);
+      console.log(resp.success);
+      console.log(resp.success == true);
+      if(resp.success == true) {
+        console.log("Saved post"); //TODO: handle exceptions, which will come back as json I guess
+        if(resp.goto != "") {
+ console.log("jumping ship");
+           location = resp.goto;
+        }
+      }
+    }, "json");
   });
 
   $("#draft_button").click(function() {
@@ -45,15 +70,19 @@ $(document).ready(function() {
 
 
 <form style="height: 100%">
-<input type=text placeholder="Title" id="post_title" value="{{post_title}}" /></input>
 <div id="epiceditor" style="width: 100%; height: 80%"></div>
 <textarea id="post_content" style="display: none">{{post_content}}</textarea>
-<input type=text placeholder="Aspects" id="post_acl" value="+subscribers"></input>
+<input type=text placeholder="Aspects" id="post_acl" value="+subscribers" />
 <button id="post_button">Post</button>
 <button id="draft_button">Save Draft</button>
 {% if live_link %}
   Permalink: <a href={{ live_link }}>{{live_link}}</a>
 {% endif %}
+
+<div id="instructions">
+  <tt>Alt-F</tt> toggles Fullscreen<br/>
+  <tt>Alt-P</tt> toggles Preview<br/>
+</div>
 
 </form>
 

@@ -13,5 +13,4 @@ def slugify(text, delim=u'-'):
         word = normalize('NFKD', word)
         if word:
             result.append(word)
-    print(result)
     return str(delim.join(result))

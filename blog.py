@@ -281,33 +281,56 @@ def subscribe():
 # just tested: Liferea, at least, properly handles following the auth links and getting logged in
 # so installing LoginLess and handing out https://blog.me/auth/<key>?next=/rss.xml as the login links is *precisely*
 
+def extract_title(md):
+	title = [l for l in md.split("\n") if l.strip().startswith("# ")]
+	if title:
+		return title[0]
+
+
 @app.route("/edit", methods=["GET","POST"])
 @app.route("/edit/<post>", methods=["GET","POST"])
 @acl.allow(admins)
 def editor(post=""):
+	app.logger.debug("editor(); post=%s", post)
 	if request.method == "POST":
-		# expect JSON
+		# expect JSON?
+		app.logger.debug("%s", request.form)
 		msg = request.json #  #awesome! yay flask
 		msg = request.form #<-- actually we have to do this...
-		app.logger.debug("Received content for post '%s' with ACL '%s'", msg['title'], msg['acl'])
 		app.logger.debug(msg['content'])
+		content = msg['content']
+		title = extract_title(content)
+		slug = slugify(title)
+		
+		app.logger.debug("Received content for '%s' with ACL '%s'", post, msg['acl'])
 		if msg['command'] == "draft":
 			raise NotImplementedError
 		elif msg['command'] == 'post':
+			app.logger.debug("Writing to disk")
 			# write to disk
-			post = slugify(msg['title'])
-			with open("_posts/" + post + ".md","w") as md:
+			# TODO: catch renames. a rename should wipe out the old files.
+			with open("_posts/" + slug + ".md","w") as md:
 				md.write(msg['content'])
-			with open("_posts/" + post + ".acl","w") as acl:
+			with open("_posts/" + slug + ".acl","w") as acl:
 				acl.write(json.dumps(msg['acl'].lower().split()))
 			
-			return json.dumps({'success': True})
+			resp = {'success': True} #TODO: handle the case where the link
+			if slug != post:
+				resp['goto'] = url_for("editor", post=slug);
+			return json.dumps(resp)
+	
+	
 	if os.path.exists("_posts/" + post + ".md"):
-		live_link = url_for("view_post", path=post);
 		content = open("_posts/" + post + ".md").read()
+		# read the title out of the markdown
+		# the title is the first <h1> title, as far as we care
+		title = extract_title(content)
+		app.logger.debug("slug: %s, post: %s", slugify(title), post)
+		live_link = url_for("view_post", path=post);
 	else:
 		live_link = None
 		content = ""
+		title = None
 	return render_template('editor.html', post_title=post, post_content=content, live_link=live_link)
 
 @app.before_request
