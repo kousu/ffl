@@ -274,14 +274,15 @@ def _logout():
 	return redirect(url_for("index"))
 
 @app.route("/rss.xml")
+@acl.public()
 def rss():
-	raise NotImplementedError
+	raise NotImplementedError("RSS is not implemented.")
 
 @app.route("/subscribe")
 @acl.public()
 def subscribe():
 	if current_user.get_id():
-		return "Already subscribed as %s" % (current_user.get_id(),), 403
+		return "%s, you are already subscribed." % (current_user.get_id(),), 403
 	
 	
 	# TODO: put interstitials in here which
@@ -322,7 +323,9 @@ def editor(post=""):
 		
 		app.logger.debug("Received content for '%s' with ACL '%s'", post, msg['acl'])
 		if msg['command'] == "draft":
-			raise NotImplementedError
+			raise NotImplementedError("Draft saving is not implemented")
+			# XXX maybe it's better to skip drafts entirely and just tell people to lock things
+			# XXX we need a publishing date widget
 		elif msg['command'] == 'post':
 			app.logger.debug("Writing to disk")
 			# write to disk
