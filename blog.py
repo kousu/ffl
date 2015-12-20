@@ -95,9 +95,6 @@ subscribers = UserDB - randoms
 Groups = {"admins": admins, "family": family, "friends": friends, "subscribers": subscribers} #randoms don't get a group: you cannot give them posts. you must move them to Subscribers first.
 
 
-acl.public()
-acl.public()
-
 @app.route("/")
 @acl.public()
 def index():
@@ -184,7 +181,7 @@ def load_post_acls(path):
 	except Exception as exc:
 		app.logger.info("Failed to load ACLs for %s. Defaulting to private.", path)
 		app.logger.debug("%s", exc)
-		raise
+		#raise
 		pass
 	
 	return allows, denies
@@ -196,8 +193,10 @@ def load_post_acls(path):
 @acl.allow(admins)
 @acl.allow(lambda user, path: user.get_id() in load_post_acls(path)[0])
 @acl.deny (lambda user, path: user.get_id() in load_post_acls(path)[1])
+@acl.public()
 def view_post(path):
-
+	g.acl = acl
+	
 	if os.path.exists(os.path.join("_posts", path + ".html")):
 		content = open(os.path.join("_posts", path + ".html")).read()
 	elif os.path.exists(os.path.join("_posts", path + ".md")):
@@ -354,7 +353,7 @@ def editor(post=""):
 		content = ""
 		title = None
 		acl = "+subscribers"
-	return render_template('editor.html', post_title=post, post_content=content, post_acl=perms, live_link=live_link)
+	return render_template('editor.html', blogtitle=BLOGTITLE, title="Editor", post_title=post, post_content=content, post_acl=perms, live_link=live_link)
 
 @app.before_request
 def q():
@@ -369,11 +368,12 @@ def q():
 
 if __name__ == '__main__':
 	
-	# XXX just playing
+	# XXX just playing with LoginLess
 	import flask_loginless
 	@lm.token_loader
-	def fail(token): raise NotImplementedError
+	def i_dont_know_how_to_load_tokens(token): raise NotImplementedError("Token-loading is not implemented. Sorry bro.")
 	flask_loginless.LoginLess(app)
+	acl.public("auth")
 	
 	if __debug__:
 		app.run(debug=True, use_reloader=False)
