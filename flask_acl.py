@@ -161,6 +161,8 @@ class ACL(object):
 		self._app.before_request(self._enforce)
 		# ---> TODO: default all apps to 
 		self._rules = {} #indexed by endpoint name
+		
+		self.public("static")
 	
 	def check(self, user, endpoint, **kwargs):
 		try:
