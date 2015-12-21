@@ -316,7 +316,13 @@ def extract_title(md):
 	title = [l for l in md.split("\n") if l.strip().startswith("# ")]
 	if title:
 		return title[0]
+	return invent_title() #XXX this should 
 
+
+WORDS = [w.strip() for w in open("/usr/share/dict/words")]
+def invent_title():
+	" make up a title on the fly, so that untitled posts (i.e. a tumbleblog) can happen "
+	return "-".join(random.choice(WORDS) for i in range(random.randint(5,16)))
 
 @app.route("/edit/", methods=["GET","POST"])
 @app.route("/edit/<path:post>", methods=["GET","POST"])
