@@ -168,6 +168,16 @@ Online Markdown editors:
  semi-related: http://dropplets.com/ has beeeeeautiful CSS, but is nothing new elsewhere really
 
 
+
+Feed Generators
+* feedgenerator - "standalone django.utils.feedgenerator"
+  used by pelican
+
+
+
+
+
+
 References
 ==========
 
@@ -201,9 +211,12 @@ BUT: IndieAuth requires subscribers to do some work: namely, put this up online
 * WebID (dead?)
 * http://browserauth.net/
 
+* https://www.digitalocean.com/community/tutorials/how-to-structure-large-flask-applications <----- kthx digitalocean :)
+* ugh why http://fewstreet.com/2015/01/16/flask-blueprint-templates.html
 
 
-
-Jekyll??
+Static Site Generators
+* https://github.com/getpelican/pelican/
+* Jekyll??
  - comments in Jekyll:
    http://www.hezmatt.org/~mpalmer/blog/2011/07/19/static-comments-in-jekyll.html 

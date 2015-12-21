@@ -1,3 +1,25 @@
+"""
+
+
+The fastest way to explain the semantics of this are that it's equivalent to:
+ user in union(*allowed) - union(*denied)
+where allowed is a set of groups of allowed people, for the current view
+  and denied  is a set of groups of denied people,  for the current view
+The main properties of this choice are:
+ * default deny: without explicit allow statements, the allow set is empty so the overall set is empty and the view is totally blocked.
+ * deny always wins: no matter how many times a user is allowed, if they are denied in a single group then they are denied totally
+
+Also, the "current view" is actually the combination (endpoint, view_args):
+for views with no args, this is essentially just the endpoint itself,
+but for others the. This is so that the ACLs can change depending on which particular subpage (e.g. which user is viewing which other users' page).
+
+TODO:
+- [ ] Sometimes it's a nuisance that Flask-ACL eats perms on everything by default.
+      Just loading it breaks /static, for example. I've patched that specific case in here
+      but endpoints from other modules/blueprints, like LoginLess's /auth, are also blocked
+      and currently the only way around this is for the user to explicitly.
+- [ ] 
+"""
 
 
 import flask
@@ -10,88 +32,7 @@ from flask.helpers import _endpoint_from_view_func
 from functools import wraps
 
 
-# Okay so question:
-# first: this thing doesn't necessarily need to come as a class, does it?
-# second: should we store the permission statefully?
-# third: where the arguments at?
 
-# question:
-# if the rule is "allow only if everyone says allow, and deny if any don't, and deny if the ACL is empty"
-# i.e. is
-# allow: A1
-# deny: D1
-# deny: D2
-# allow: A2
-# deny: D3
-# allow: A3
-# the same as
-# allow: A1 | A2 | A3
-# deny: D1 | D2 | D3
-# which is the same as
-# union(A1,A2,A3) \ union(D1,D2,D3)
-# this has the feature that denies always override
-
-# one design:
-# each .allow / .deny call wraps the function
-# so there's a nested chain of wrapped functions
-# 
-
-# two design:
-# explicitly record a list of ACL predicates, the way @before_request() records a list of funcs
-#  this is tricky because the predicates need to be per-endpoint, which means I need to deal with guessing the
-
-# two is good because the code to enforce the ACLs is simpler so more safe
-#  especially in that implementing .public() sanely: we could say that .public() just chains into the rest of the system, and can be overridden by a deny, but that's  .public() *erases* the previous ACL list and just sets itself
-#   ==> unix perms have a special bit for "public": o+rwx. 
-#   Unix perms have a subtle quirk in this:
-#    -rw----r-- 1 root  wireshark 29 Dec 19 20:40 A
-#   can be read by anyone (because it's o+r) EXCEPT for people in the wireshark group
-#   so sw
-# This is not at all appropriate for the web: on unix, theoretically at least, every account is named and given out by hand by a sysadmin.
-#  but on the web you can have lots of totally anonymous users. because of the quantitative difference in degree, there's a qualitative difference between the "other" bits on unix and "public" on a website
-# (this gets hazy with large institutions, like a campus or corporate network, where pam_ldap.so might let you into any account on any server where thousands of other people have files. but at least there you still can't arbitrarily make new alt accounts)
-#
-
-# but the indirection through the endpoint name is tricky (I'm not totally sure why flask felt it necessary to even have endpoint names; if they can map route -> endpoint -> function why can't they map route -> function directly and drop the intermediary?)
-# one is something like: for allow()s: if they match you let the ACL through, if they don't you . for deny()s you break 
-# two is 
-
-# If the semantics were: "first match wins" then one design is simple to implement: for allows, if you match, render the view, otherwise...render the view? oh wait, no, actually wrapping is not so simple, eh?
-# hmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm
-
-# Okay, decision:
-# I want the semantics to be as if:
-#  current_user.get_id() in union(A for A in Allows) - union(D for D in Denies)
-# Is there an efficient way to do this in the presence of predicates? and without actually constructing the access set?
-# ....but actually: being able to read the list explicitly is useful for UI: you can tell if someone is in a set or not by scanning
-# being clever by stacking wrappers, then, is dumb
-# Why did I want predicates in the first place?
-# - because I want to be able to shell out generically. and the list has to be computed per-request instead of at boot.
-# How would that look?
-
-def acl_for(user, endpoint, **kwargs):
-	"return the ACL for endpoint, i.e. the set of user_ids that have access to that endpoint"
-	
-	# find the current app
-	app = _app_ctx_stack.top.app
-	
-	return app.acl.check(user, endpoint, **kwargs)	
-
-# request comes in
-# we ask acl_for(user, endpoint, **args)
-# the part that needs factoring is:
-# so I can't nicely just say
-# @allow(set
-# @allow(
-# @deny(
-# because.. why?? why not? it seems like I should be able to do this shit ugh
-# because
-# so what do I do?
-# @allow()
-# okay, so: we parameterize on (endpoint, tuple(view_args.items())
-# For views with no parameters this is just (endpoint,())
-# otherwise there's something more
-# it's 
 
 class public_set(set):
 	"this represents the infinite, universal, set"
@@ -247,3 +188,10 @@ class ACL(object):
 		return self.allow(public_set, endpoint=endpoint)
 
 			
+def acl_for(user, endpoint, **kwargs):
+	"return the ACL for endpoint, i.e. the set of user_ids that have access to that endpoint"
+	
+	# find the current app
+	app = _app_ctx_stack.top.app
+	
+	return app.acl.check(user, endpoint, **kwargs)

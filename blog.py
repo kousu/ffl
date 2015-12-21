@@ -98,14 +98,6 @@ family = {"sister", "brother", "mom", "dad", "aunt"}
 friends = {"oauth:https://facebook.com/sally", "oauth:https://facebook.com/sanchez", "mailto:jack@gmail.com"}
 randoms = {"anon2342", "anon324234"} # people who have followed us but that we have not accepted, roughly equivalent to a Friend Request that goes nowhere
 
-class public(set):
-	"this represents the infinite, universal, set"
-	def __init__(self): pass #disable the constructor
-	def __contains__(self, x): return True
-	def __str__(self): return "public"
-public = public()
-no1 = set()
-
 
 
 UserDB = admins.union(family).union(friends).union(randoms)

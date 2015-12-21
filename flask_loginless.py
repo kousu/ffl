@@ -31,7 +31,8 @@ from datetime import *
 
 import flask.ext.login
 
-
+# TODO:
+# - since this makes views, maybe it should be a Blueprint? What's the difference between a flask extension and a blueprint?
 
 
 
