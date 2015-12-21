@@ -194,6 +194,10 @@ def load_post_acls(path):
 	
 	return allows, denies
 
+@app.before_request
+def share_acl():
+	g.acl = acl
+
 # TODO:
 #  the idea is that some pages (/index, /manage) will have fixed permissions coded at the app level
 #  but for everything under /post, we delegate to the external, user-controlled, database
@@ -203,8 +207,6 @@ def load_post_acls(path):
 @acl.deny (lambda user, path: user.get_id() in load_post_acls(path)[1])
 def view_post(path):
 	path = strip_traversals(path)
-	
-	g.acl = acl
 	
 	if os.path.exists(os.path.join("_posts", path + ".html")):
 		content = open(os.path.join("_posts", path + ".html")).read()

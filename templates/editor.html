@@ -61,6 +61,8 @@ $(document).ready(function() {
 <div id="epiceditor" style="width: 100%; height: 80%"></div>
 <textarea id="post_content" style="display: none">{{post_content}}</textarea>
 <input type=text placeholder="Aspects" id="post_acl" value="{{post_acl}}" />
+<input type=date id="post_date" />
+<input type=time id="post_time" />
 <button id="post_button">Post</button>
 {% if live_link %}
   Permalink: <a href={{ live_link }}>{{live_link}}</a>
