@@ -405,6 +405,6 @@ if __name__ == '__main__':
 	acl.public("auth")
 	
 	if __debug__:
-		app.run(debug=True, use_reloader=False)
+		app.run(debug=True, use_reloader=False, host="0.0.0.0")
 	else:
 		app.run()

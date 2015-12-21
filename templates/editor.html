@@ -7,8 +7,10 @@
 
   {{ super() }}
 
-  <script type="text/javascript" src="{{url_for("static", filename="js/datetime-polyfill.js")}}"></script>
-  <link rel="stylesheet" href="{{url_for("static", filename="js/datetime-polyfill.css")}}">
+  <script type="text/javascript" src="{{url_for("static", filename="js/date-polyfill.js")}}"></script>
+  <link rel="stylesheet" href="{{url_for("static", filename="js/date-polyfill.css")}}">
+  <script type="text/javascript" src="{{url_for("static", filename="js/time-polyfill.js")}}"></script>
+  <link rel="stylesheet" href="{{url_for("static", filename="js/time-polyfill.css")}}">
 
 
 {% endblock %}
@@ -20,12 +22,12 @@
 <script>
 
 $(document).ready(function() {
-  editor = new EpicEditor({basePath: '/static/epiceditor',
+  editor = new EpicEditor({basePath: '/static/epiceditor/',
                           textarea: 'post_content',
                           button: { bar: "show" },
                           focusOnLoad: true,
                           file: { defaultContent: "# Untitled\n\n\n" },
-                          theme: {preview: "themes/preview/bartik.css"}
+                          theme: {preview: "themes/preview/github.css"}
                          }).load(); //Note: intentionally global
   // wipe localstorage: it's a nuisance that other posts can show up
   // so just ignore this feature
@@ -83,7 +85,8 @@ $(document).ready(function() {
  TODO: use datetime-local instead?
 --->
 
-<input type="datetime" id="post_date" step="900" placeholder="yyyy-mm-ddThh:mmZ" value="{{post_datetime}}" />
+<input type="date" id="post_date" placeholder="yyyy-mm-dd" value="{{post_date}}" />
+<input type="time" id="post_date" step="900" placeholder="hh:mm" value="00:00" /><!--- 900 == 15 minute intervals --->
 </script>
 <button id="post_button">Post</button>
 {% if live_link %}
