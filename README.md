@@ -212,7 +212,21 @@ BUT: IndieAuth requires subscribers to do some work: namely, put this up online
 * http://browserauth.net/
 
 * https://www.digitalocean.com/community/tutorials/how-to-structure-large-flask-applications <----- kthx digitalocean :)
-* ugh why http://fewstreet.com/2015/01/16/flask-blueprint-templates.html
+* ugh why http://fewstreet.com/2015/01/16/flask-blueprint-templates.html#Inspiration: petnames
+# http://www.skyhunter.com/marcs/petnames/IntroPetNames.html
+# this isn't quite a petnames system, but it does exploit:
+# - linking keys to shorter names
+# - storing the mappings decentralized
+#
+
+#Inspiration: petnames
+# http://www.skyhunter.com/marcs/petnames/IntroPetNames.html
+# this isn't quite a petnames system, but it does exploit:
+# - linking keys to shorter names
+# - storing the mappings decentralized
+#
+
+
 
 
 Static Site Generators

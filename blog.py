@@ -1,4 +1,7 @@
 """
+Prototype self-hosted ACL-controlled blog, based on distributed identity (i.e. identity servers aka "social sign on" or plain old email)
+Usage:
+`python blog.py & surf http://localhost:5000`
 
 
 Future plan:
@@ -145,14 +148,9 @@ def index():
 def load_post_acls(path):
 	" load the ACLs for view "
 	" this is soooooooooooooooooooooo kludgy "
-	# XXX design problem!
-	# my ACLs
-	# if my ACLs are predictates, then the predicates can handle
-	# if my ACLs are sets, then I need to record an ACL for each (endpoint, view_args) combination
-	# and since there's no way I can know these in advance....
-	# bah
-	# let's just see if I can get this working
-
+	
+	path = strip_traversals(path)
+	
 	app.logger.debug("Loading ACLs for %s", path)
 	
 	# TODO: cache (but not memoize) this for speed
@@ -203,8 +201,9 @@ def load_post_acls(path):
 @acl.allow(admins)
 @acl.allow(lambda user, path: user.get_id() in load_post_acls(path)[0])
 @acl.deny (lambda user, path: user.get_id() in load_post_acls(path)[1])
-@acl.public()
 def view_post(path):
+	path = strip_traversals(path)
+	
 	g.acl = acl
 	
 	if os.path.exists(os.path.join("_posts", path + ".html")):
@@ -219,7 +218,7 @@ def view_post(path):
 		# doesn't exist!
 		return abort(404)
 	
-	content = Markup(content) #mark the content as 'safe' against XSS, so that it doesn't
+	content = Markup(content) #mark the content as 'safe' so that the templating engine doesn't mangle the HTML.
 	return render_template('post.html', blogtitle=BLOGTITLE, title="",
 		content=content,
 		comments=[])
@@ -286,6 +285,7 @@ def _logout():
 @app.route("/rss.xml")
 @acl.public()
 def rss():
+	# TODO: feedgenerator
 	raise NotImplementedError("RSS is not implemented.")
 
 @app.route("/subscribe")
@@ -317,9 +317,11 @@ def extract_title(md):
 
 
 @app.route("/edit/", methods=["GET","POST"])
-@app.route("/edit/<post>", methods=["GET","POST"])
+@app.route("/edit/<path:post>", methods=["GET","POST"])
 @acl.allow(admins)
 def editor(post=""):
+	post = strip_traversals(post)
+	
 	app.logger.debug("editor(); post=%s", post)
 	if request.method == "POST":
 		# expect JSON?
@@ -383,12 +385,6 @@ def editor(post=""):
 def q():
 	app.logger.debug("%s from %s", request.full_path, current_user.get_id())
 
-#Inspiration: petnames
-# http://www.skyhunter.com/marcs/petnames/IntroPetNames.html
-# this isn't quite a petnames system, but it does exploit:
-# - linking keys to shorter names
-# - storing the mappings decentralized
-# 
 
 if __name__ == '__main__':
 	
