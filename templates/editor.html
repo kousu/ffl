@@ -46,15 +46,20 @@ $(document).ready(function() {
       acl:     $("#post_acl").val()
               };
     
-    $.post("", msg, function(resp) {
-      console.log("Saved post"); //TODO: handle exceptions, which will come back as json I guess (or as an..HTTP error code?)
-      if(resp.goto) {
+    $.post("", msg, null, "json") // "" implicitly means to post to this self-same page
+     .done(function(resp) {
+       console.log("Saved post"); //TODO: handle exceptions, which will come back as json I guess (or as an..HTTP error code?)
+       if(resp.goto) {
          console.log("jumping ship");
          location = resp.goto;
-      }
-    }, "json");
+       }
+     })
+     .fail(function(e) {
+        console.log("Posting Failed");
+	console.log(e, e.statusCode());
+     });
 
-    return false; // stop bubbling
+    return false; // stop the click bubbling up and submitting the form
   });
 
 });

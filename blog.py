@@ -355,20 +355,18 @@ def editor(post=""):
 		content = msg['content']
 		title = extract_title(content)
 		slug = slugify(title)
-		
+		app.logger.debug("POST /edit/%s: new slug=%s", post, slug)
 		app.logger.debug("Received content for '%s' with ACL '%s'", post, msg['acl'])
 		app.logger.debug("Writing to disk")
-		# write to disk
-		# TODO: catch renames. a rename should wipe out the old files.
+		
 		with open("_posts/" + slug + ".md","w") as md:
 			md.write(msg['content'])
 		with open("_posts/" + slug + ".acl","w") as acl:
 			acl.write(json.dumps(msg['acl'].lower().split()))
 		
 		resp = {}
-		app.logger.debug("POST /edit/%s: new slug=%s", post, slug) 
-		if slug != post:
-			# a rename happened
+		if slug != post: #XXX this isn't truuuuuuuuuuuuuuuuuuuuuuue, because there might not *be* a title (in which case our slug 
+			# a rename happened, so wipe the old file
 			
 			# get rid of the old copy
 			try: os.unlink("_posts/" + post + ".md")
