@@ -371,7 +371,8 @@ def editor(post=""):
 		# the title is the first <h1> title, as far as we care
 		assert slugify(extract_title(content)) == post, "When loading an existing post, slug from the post content should equal the title in the URL of the page!"
 		live_link = url_for("view_post", path=post);
-		post_datetime = ""
+		
+		post_datetime = datetime.datetime.fromtimestamp(0) # XXX in lieu of reading the date off the filesystem, set the post date to the Unix Epoch
 	else:
 		# d
 		live_link = None
@@ -380,14 +381,25 @@ def editor(post=""):
 		# but that's ignored if there's anything saved in localStorage
 		# so whatever, fuck it, i'll fix it server-side
 		perms = "private"
-		post_datetime = datetime.datetime.utcnow()
+		post_datetime = datetime.datetime.now()
 	
-	# convert the datetime to an isoformat datetime string as used by html5
+	# we convert the datetime to isoformat as used by html5
+	# we don't give a timezone (note: timezones only apply) so the timezone is implicitly whatever the *server* thinks
+	# XXX this means that if you move countries your posts will all have timezone drift. this isn't a huuuge deal, but standardizing on zulu time would be better.
+	# ( so: ideally the user input is implicitly in the timezones, but the storage is in UTC, which means at load/save time we need to convert, but otherwise)
+	# ( datetime has tzinfo objects and .utcoffset() and some other things to help with this; I need to look into it
 	# BEWARE: the timezone is ASSUMED TO BE UTC ('Z' for "Zulu time")
-	# because that seems to be the default for html5
-	if post_datetime: post_datetime = post_datetime.isoformat()[:16]+"Z" # HACK
 	
-	return render_template('editor.html', blogtitle=BLOGTITLE, title="Editor", post_title=post, post_content=content, post_acl=perms, live_link=live_link, post_datetime=post_datetime)
+	# round minute down to nearest 15 minute interval, to match the 15-minute resolution
+	# (the rendering of a time string is finicky in different browsers; not giving it the chance to deal with sub-minute resolution helps)
+	# TODO: this should be a function since we need to also run it on incoming data --- since we can't trust the input!
+	post_datetime = post_datetime.replace(minute = post_datetime.minute//15 * 15, second=0, microsecond=0)
+	
+	return render_template('editor.html',
+	                       blogtitle=BLOGTITLE,
+	                       title="Editor",
+	                       post_title=post, post_content=content, post_acl=perms, live_link=live_link,
+	                       post_date=post_datetime.date().isoformat(), post_time=post_datetime.time().isoformat())
 
 
 @app.before_request

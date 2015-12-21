@@ -1,5 +1,7 @@
 {% extends "_layout.html" %}
 
+
+
 {% block head %}
   <style>
     html, body, #content { height: 100% }
@@ -7,17 +9,16 @@
 
   {{ super() }}
 
+  <!-- HTML5 <input type=> polyfills (even Chrome doesn't have these implemented fully) -->
   <script type="text/javascript" src="{{url_for("static", filename="js/date-polyfill.js")}}"></script>
   <link rel="stylesheet" href="{{url_for("static", filename="js/date-polyfill.css")}}">
   <script type="text/javascript" src="{{url_for("static", filename="js/time-polyfill.js")}}"></script>
   <link rel="stylesheet" href="{{url_for("static", filename="js/time-polyfill.css")}}">
-
-
 {% endblock %}
 
+
+
 {% block content %}
-
-
 <script src={{ url_for("static", filename="epiceditor/js/epiceditor.js") }}></script>
 <script>
 
@@ -67,11 +68,11 @@ $(document).ready(function() {
 
 
 <form style="height: 100%">
-<div id="epiceditor" style="width: 100%; height: 80%"></div>
 <textarea id="post_content" style="display: none">{{post_content}}</textarea>
+<div id="epiceditor" style="width: 100%; height: 80%"></div>
 <input type=text placeholder="Aspects" id="post_acl" value="{{post_acl}}" />
 
-<!--- opera is the only browser with a fully working. everyone else needs to use some custom hack
+<!-- opera is the only browser with a fully working. everyone else needs to use some custom hack
   the best of the custom hacks is to use a polyfill: a js library which detects if it's needed and hacks stuff up so that the datetime input gets a GUI and on the API side appears to work fully 
   if javascript isn't available the polyfill won't work,
    so to cover that I'm writing the time format in the placeholder in that case 
@@ -83,11 +84,10 @@ $(document).ready(function() {
    http://xdsoft.net/jqplugins/datetimepicker/ looks nice. too bad it's not a polyfill.
 
  TODO: use datetime-local instead?
---->
+-->
 
-<input type="date" id="post_date" placeholder="yyyy-mm-dd" value="{{post_date}}" />
-<input type="time" id="post_date" step="900" placeholder="hh:mm" value="00:00" /><!--- 900 == 15 minute intervals --->
-</script>
+<input type="date" id="post_date" placeholder="yyyy-mm-dd" value="{{post_date if post_date else "1969-01-01"}}" />
+<input type="time" id="post_date" step="900" placeholder="hh:mm" value="{{post_time if post_time else "00:00" }}" /><!-- 900 == 15 minute intervals -->
 <button id="post_button">Post</button>
 {% if live_link %}
   Permalink: <a href={{ live_link }}>{{live_link}}</a>
@@ -100,5 +100,4 @@ $(document).ready(function() {
 </div>
 
 </form>
-
 {% endblock %}
