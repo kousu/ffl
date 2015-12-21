@@ -216,18 +216,18 @@ def share_acl():
 # TODO:
 #  the idea is that some pages (/index, /manage) will have fixed permissions coded at the app level
 #  but for everything under /post, we delegate to the external, user-controlled, database
-@app.route("/post/<path:path>")
+@app.route("/post/<path:post>")
 @acl.allow(admins)
-@acl.allow(lambda user, path: user.get_id() in load_post_acls(path)[0])
-@acl.deny (lambda user, path: user.get_id() in load_post_acls(path)[1])
-def view_post(path):
-	path = strip_traversals(path)
+@acl.allow(lambda user, post: user.get_id() in load_post_acls(post)[0])
+@acl.deny (lambda user, post: user.get_id() in load_post_acls(post)[1])
+def view_post(post):
+	path = strip_traversals(post)
 	
-	if os.path.exists(os.path.join("_posts", path + ".html")):
-		content = open(os.path.join("_posts", path + ".html")).read()
-	elif os.path.exists(os.path.join("_posts", path + ".md")):
+	if os.path.exists(os.path.join("_posts", post + ".html")):
+		content = open(os.path.join("_posts", post + ".html")).read()
+	elif os.path.exists(os.path.join("_posts", post + ".md")):
 		# note: there is a Flask-Markdown extension, which gives a filter you can use in templates (like `{{ content | markdown }}` but this is dumb)
-		content = open(os.path.join("_posts", path + ".md")).read()
+		content = open(os.path.join("_posts", post + ".md")).read()
 		content = markdown.Markdown(extensions=['markdown.extensions.fenced_code']).convert(content) #TODO: cache the Markdown instance
 		content = bleach.clean(content, bleach.ALLOWED_TAGS+["h1","h2","h3","pre","p"]) # sanitize untrusted input!
 		# hmmm. this is.
@@ -328,7 +328,7 @@ def subscribe():
 # so installing LoginLess and handing out https://blog.me/auth/<key>?next=/rss.xml as the login links is *precisely*
 
 def extract_title(md):
-	title = [l for l in md.split("\n") if l.strip().startswith("# ")]
+	title = [l.strip()[2:] for l in md.split("\n") if l.strip().startswith("# ")]
 	if title:
 		return title[0]
 	return invent_title() #XXX this should 
@@ -345,26 +345,22 @@ def invent_title():
 def editor(post=""):
 	post = strip_traversals(post)
 	
-	app.logger.debug("editor(); post=%s", post)
 	if request.method == "POST":
-		# expect JSON?
-		app.logger.debug("%s", request.form)
-		msg = request.json #  #awesome! yay flask
-		msg = request.form #<-- actually we have to do this...
-		app.logger.debug(msg['content'])
-		content = msg['content']
-		title = extract_title(content)
+		# TODO: beware of CSRF! You should really use WTForms...
+		# as written, anyone can trick your browser into posting anything to your blog
+		
+		title = extract_title(request.form['post_content'])
+		app.logger.debug("post content: %s", request.form['post_content'])
 		slug = slugify(title)
 		app.logger.debug("POST /edit/%s: new slug=%s", post, slug)
-		app.logger.debug("Received content for '%s' with ACL '%s'", post, msg['acl'])
+		app.logger.debug("Received content for '%s' with ACL '%s'", post, request.form['post_acl'])
 		app.logger.debug("Writing to disk")
 		
 		with open("_posts/" + slug + ".md","w") as md:
-			md.write(msg['content'])
+			md.write(request.form['post_content'])
 		with open("_posts/" + slug + ".acl","w") as acl:
-			acl.write(json.dumps(msg['acl'].lower().split()))
+			acl.write(json.dumps(request.form['post_acl'].lower().split()))
 		
-		resp = {}
 		if slug != post: #XXX this isn't truuuuuuuuuuuuuuuuuuuuuuue, because there might not *be* a title (in which case our slug 
 			# a rename happened, so wipe the old file
 			
@@ -373,54 +369,46 @@ def editor(post=""):
 			except: pass
 			try: os.unlink("_posts/" + post + ".acl")
 			except: pass
+		
+		return redirect(url_for("view_post", post=slug))
+	
+	elif request.method == "GET":
+		if os.path.exists("_posts/" + post + ".md"):
+			perms = open("_posts/" + post + ".acl").read()
+			perms = " ".join(json.loads(perms))
 			
-			# tell the browser to jump
-			# TODO: do the thing where you change the URL without reloading the page
-			resp['goto'] = url_for("editor", post=slug);
+			content = open("_posts/" + post + ".md").read()
+			
+			# read the title out of the markdown
+			# the title is the first <h1> title, as far as we care
+			assert slugify(extract_title(content)) == post, "When loading an existing post, slug from the post content should equal the title in the URL of the page!"
+			live_link = url_for("view_post", post=post);
+			
+			published = datetime.datetime.fromtimestamp(0) # XXX in lieu of reading the date off the filesystem, set the post date to the Unix Epoch
+		else:
+			# new post
+			live_link = None
+			content = None
+			perms = "private"
+			published = datetime.datetime.now()
+	
+		# we convert the datetime to isoformat as used by html5
+		# we don't give a timezone (note: timezones only apply) so the timezone is implicitly whatever the *server* thinks
+		# XXX this means that if you move countries your posts will all have timezone drift. this isn't a huuuge deal, but standardizing on zulu time would be better.
+		# ( so: ideally the user input is implicitly in the timezones, but the storage is in UTC, which means at load/save time we need to convert, but otherwise)
+		# ( datetime has tzinfo objects and .utcoffset() and some other things to help with this; I need to look into it
+		# BEWARE: the timezone is ASSUMED TO BE UTC ('Z' for "Zulu time")
+	
+		# round minute down to nearest 15 minute interval, to match the 15-minute resolution
+		# (the rendering of a time string is finicky in different browsers; not giving it the chance to deal with sub-minute resolution helps)
+		# TODO: this should be a function since we need to also run it on incoming data --- since we can't trust the input!
+		published = published.replace(minute = published.minute//15 * 15, second=0, microsecond=0)
 		
-		return json.dumps(resp)
-	
-	
-	if os.path.exists("_posts/" + post + ".md"):
-		perms = open("_posts/" + post + ".acl").read()
-		perms = " ".join(json.loads(perms))
-		
-		content = open("_posts/" + post + ".md").read()
-		
-		# read the title out of the markdown
-		# the title is the first <h1> title, as far as we care
-		assert slugify(extract_title(content)) == post, "When loading an existing post, slug from the post content should equal the title in the URL of the page!"
-		live_link = url_for("view_post", path=post);
-		
-		post_datetime = datetime.datetime.fromtimestamp(0) # XXX in lieu of reading the date off the filesystem, set the post date to the Unix Epoch
-	else:
-		# d
-		live_link = None
-		content = "# Untitled\n\n\n" #<-- EpicEditor uses localStorage to automatically save drafts. this is a nice feature, but without managing it carefully it also means that 'new' posts get prefilled with whatever was last in the editor page on your browser
-		content = None
-		# I *did* set the default text (to trigger on value == "") in it to this string
-		# but that's ignored if there's anything saved in localStorage
-		# so whatever, fuck it, i'll fix it server-side
-		perms = "private"
-		post_datetime = datetime.datetime.now()
-	
-	# we convert the datetime to isoformat as used by html5
-	# we don't give a timezone (note: timezones only apply) so the timezone is implicitly whatever the *server* thinks
-	# XXX this means that if you move countries your posts will all have timezone drift. this isn't a huuuge deal, but standardizing on zulu time would be better.
-	# ( so: ideally the user input is implicitly in the timezones, but the storage is in UTC, which means at load/save time we need to convert, but otherwise)
-	# ( datetime has tzinfo objects and .utcoffset() and some other things to help with this; I need to look into it
-	# BEWARE: the timezone is ASSUMED TO BE UTC ('Z' for "Zulu time")
-	
-	# round minute down to nearest 15 minute interval, to match the 15-minute resolution
-	# (the rendering of a time string is finicky in different browsers; not giving it the chance to deal with sub-minute resolution helps)
-	# TODO: this should be a function since we need to also run it on incoming data --- since we can't trust the input!
-	post_datetime = post_datetime.replace(minute = post_datetime.minute//15 * 15, second=0, microsecond=0)
-	
-	return render_template('editor.html',
-	                       blogtitle=BLOGTITLE,
-	                       title="Editor",
-	                       post_title=post, post_content=content, post_acl=perms, live_link=live_link,
-	                       post_date=post_datetime.date().isoformat(), post_time=post_datetime.time().isoformat())
+		return render_template('editor.html',
+		                       blogtitle=BLOGTITLE,
+		                       title="Editor",
+		                       post_title=post, post_content=content, post_acl=perms, live_link=live_link,
+	        	               post_date=published.date().isoformat(), post_time=published.time().isoformat())
 
 
 @app.before_request

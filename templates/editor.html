@@ -39,38 +39,21 @@ $(document).ready(function() {
 
   //Note: intentionally global
 
-  $("#post_button").click(function() {
-    
-    var msg = {
-      content: editor.exportFile(),
-      acl:     $("#post_acl").val()
-              };
-    
-    $.post("", msg, null, "json") // "" implicitly means to post to this self-same page
-     .done(function(resp) {
-       console.log("Saved post"); //TODO: handle exceptions, which will come back as json I guess (or as an..HTTP error code?)
-       if(resp.goto) {
-         console.log("jumping ship");
-         location = resp.goto;
-       }
-     })
-     .fail(function(e) {
-        console.log("Posting Failed");
-	console.log(e, e.statusCode());
-     });
-
-    return false; // stop the click bubbling up and submitting the form
+  // on submit, sync the EpicEditor with the original <textarea>
+  // It would be better if EpicEditor's editable area *was* the textarea, but beggar's can't be choosers
+  // (actually they can: markitup and bootstrap-markdown both do this)
+  $("#editor_form").submit(function() {
+    $("#post_content").val(editor.exportFile());
   });
-
 });
 
 </script>
 
 
-<form style="height: 100%">
-<textarea id="post_content" style="display: none">{{post_content}}</textarea>
+<form id="editor_form" style="height: 100%" method="post" enctype="multipart/form-data">
+<textarea id="post_content" name="post_content" style="display: none">{{post_content}}</textarea>
 <div id="epiceditor" style="width: 100%; height: 80%"></div>
-<input type=text placeholder="Aspects" id="post_acl" value="{{post_acl}}" />
+<input type=text placeholder="Aspects" id="post_acl" name="post_acl" value="{{post_acl}}" />
 
 <!-- opera is the only browser with a fully working. everyone else needs to use some custom hack
   the best of the custom hacks is to use a polyfill: a js library which detects if it's needed and hacks stuff up so that the datetime input gets a GUI and on the API side appears to work fully 
@@ -86,8 +69,8 @@ $(document).ready(function() {
  TODO: use datetime-local instead?
 -->
 
-<input type="date" id="post_date" placeholder="yyyy-mm-dd" value="{{post_date if post_date else "1969-01-01"}}" />
-<input type="time" id="post_date" step="900" placeholder="hh:mm" value="{{post_time if post_time else "00:00" }}" /><!-- 900 == 15 minute intervals -->
+<input type="date" id="post_date" name="post_date" placeholder="yyyy-mm-dd" value="{{post_date if post_date else "1969-01-01"}}" />
+<input type="time" id="post_time" name="post_time" step="900" placeholder="hh:mm" value="{{post_time if post_time else "00:00" }}" /><!-- 900 == 15 minute intervals -->
 <button id="post_button">Post</button>
 {% if live_link %}
   Permalink: <a href={{ live_link }}>{{live_link}}</a>
