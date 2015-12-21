@@ -13,6 +13,17 @@ Also, the "current view" is actually the combination (endpoint, view_args):
 for views with no args, this is essentially just the endpoint itself,
 but for others the. This is so that the ACLs can change depending on which particular subpage (e.g. which user is viewing which other users' page).
 
+
+Similar:
+* https://pythonhosted.org/Flask-Security/features.html
+  --> this does indeed make a Blueprint: https://github.com/mattupstate/flask-security/blob/9583dc3e63af452eb3e23c919a4697554b168330/flask_security/views.py
+
+Flask-ACL is in direct competition with https://pythonhosted.org/Flask-Principal/. It has a more minimalist approach.
+Roles and Permissions are a nice academic game, and totally floundering in the real world.
+Flask-ACL does not define what a permission is or define a way to ask if it is acceptable; rather, it says that every
+activity is an HTTP request, and if you need to guard particular activities in different ways, you should split them into separate views and guard those.
+
+
 TODO:
 - [ ] Sometimes it's a nuisance that Flask-ACL eats perms on everything by default.
       Just loading it breaks /static, for example. I've patched that specific case in here

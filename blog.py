@@ -34,6 +34,21 @@ UI:
   --- EpicEditor is pretty javascript heavy, but there's 
 - [ ] A publish date widget. New posts get now, edited posts get set to their old date.
 
+UX:
+- [ ] What resolution on post dates should there be? Should there be a min/max date?
+- [ ] Should 'private' or 'public' need to be alone in the perms field, or should they be special cases that live alongside but override the others?
+  - Pro alone: the cognitive load is simpler
+  - Pro together: you could write a list of people *to* publish to but then
+- [ ] Should there be Drafts distinct from just Private posts?
+  - LJ doesn't have drafts. So yeah, probably just keeping things `private` is enough.
+- [ ] How should permissions work? I want the simple to be simple (and safe!) and the complex possible.
+  - Here's LJ's design: http://www.livejournal.com/support/faq/24.html
+    Their UI has a simple dropdown with 3 elements {public,friends,private} and a fourth "custom" which opens up a sub-UI for selecting groups (+s). There's no way to do -s explicitly.
+    The first three have distinct icons; the fourth has the same icon as "friends" except to the owner, who sees.
+
+Data:
+- [ ] Store post dates in UTC instead of in whatever the server's timezone is --- but use the client's ..local..? time? (<input type="datetime-local"> would solve all these, because it always gives Zulu time to the API but local time to the user, but no browsers support it yet)
+
 Testing:
 - [ ] Write some unit tests!
 """
