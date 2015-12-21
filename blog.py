@@ -366,16 +366,28 @@ def editor(post=""):
 		perms = " ".join(json.loads(perms))
 		
 		content = open("_posts/" + post + ".md").read()
+		
 		# read the title out of the markdown
 		# the title is the first <h1> title, as far as we care
 		assert slugify(extract_title(content)) == post, "When loading an existing post, slug from the post content should equal the title in the URL of the page!"
 		live_link = url_for("view_post", path=post);
+		post_datetime = ""
 	else:
 		# d
 		live_link = None
-		content = ""
+		content = "# Untitled\n\n\n" #<-- EpicEditor uses localStorage to automatically save drafts. this is a nice feature, but without managing it carefully it also means that 'new' posts get prefilled with whatever was last in the editor page on your browser
+		# I *did* set the default text (to trigger on value == "") in it to this string
+		# but that's ignored if there's anything saved in localStorage
+		# so whatever, fuck it, i'll fix it server-side
 		perms = "private"
-	return render_template('editor.html', blogtitle=BLOGTITLE, title="Editor", post_title=post, post_content=content, post_acl=perms, live_link=live_link)
+		post_datetime = datetime.datetime.utcnow()
+	
+	# convert the datetime to an isoformat datetime string as used by html5
+	# BEWARE: the timezone is ASSUMED TO BE UTC ('Z' for "Zulu time")
+	# because that seems to be the default for html5
+	if post_datetime: post_datetime = post_datetime.isoformat()[:16]+"Z" # HACK
+	
+	return render_template('editor.html', blogtitle=BLOGTITLE, title="Editor", post_title=post, post_content=content, post_acl=perms, live_link=live_link, post_datetime=post_datetime)
 
 
 @app.before_request

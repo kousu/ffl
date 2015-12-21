@@ -2,11 +2,23 @@
 <html>
   <head>
     {% block head %}
-    <!-- <link rel="stylesheet" href="{{ url_for('static', filename='epiceditor/themes/preview/bartik.css') }}"> -->
+    
+    <!--- site stylesheet --->
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <!-- <link rel="stylesheet" href="{{ url_for('static', filename='epiceditor/themes/preview/bartik.css') }}"> -->
+
+    <!--- jQuery --->
     <script src="{{url_for("static", filename="js/jquery.js")}}"></script>
+
+    <!--- jQuery-UI --->
     <script src="{{url_for("static", filename="js/jquery-ui/jquery-ui.js")}}"></script>
     <link rel="stylesheet" href="{{url_for("static", filename="js/jquery-ui/jquery-ui.css")}}"></script>
+    <link rel="stylesheet" href="{{url_for("static", filename="js/jquery-ui/jquery-ui.theme.css")}}"></script>
+
+    <!--- Modernizr --->
+    <!-- modernizr is fucking stupid now: there's no way to get a build with all the features, you have to explicitly click in the ones you are using and rebuild them. Sure it's fast in the end, but this is terrible for dev -->
+    <script src="{{url_for("static", filename="js/modernizr-custom.js")}}"></script>
+
 
     <title>{{ blogtitle }} - {{ title }}</title>
     {% endblock %}

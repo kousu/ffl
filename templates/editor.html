@@ -1,13 +1,20 @@
 {% extends "_layout.html" %}
 
+{% block head %}
+  <style>
+    html, body, #content { height: 100% }
+  </style>
+
+  {{ super() }}
+
+  <script type="text/javascript" src="{{url_for("static", filename="js/datetime-polyfill.js")}}"></script>
+  <link rel="stylesheet" href="{{url_for("static", filename="js/datetime-polyfill.css")}}">
+
+
+{% endblock %}
+
 {% block content %}
 
-<style>
-
-html, body, #content { height: 100% }
-
-
-</style>
 
 <script src={{ url_for("static", filename="epiceditor/js/epiceditor.js") }}></script>
 <script>
@@ -61,8 +68,23 @@ $(document).ready(function() {
 <div id="epiceditor" style="width: 100%; height: 80%"></div>
 <textarea id="post_content" style="display: none">{{post_content}}</textarea>
 <input type=text placeholder="Aspects" id="post_acl" value="{{post_acl}}" />
-<input type=date id="post_date" />
-<input type=time id="post_time" />
+
+<!--- opera is the only browser with a fully working. everyone else needs to use some custom hack
+  the best of the custom hacks is to use a polyfill: a js library which detects if it's needed and hacks stuff up so that the datetime input gets a GUI and on the API side appears to work fully 
+  if javascript isn't available the polyfill won't work,
+   so to cover that I'm writing the time format in the placeholder in that case 
+  
+  The only polyfill I've found so far is:
+   https://jonstipe.github.io/datetime-polyfill/demo.html
+   and it's unmaintained, a little bit ugly, but probably salvageable
+  otherwise, I'll have to manually use Modernizr and a datetime widget
+   http://xdsoft.net/jqplugins/datetimepicker/ looks nice. too bad it's not a polyfill.
+
+ TODO: use datetime-local instead?
+--->
+
+<input type="datetime" id="post_date" step="900" placeholder="yyyy-mm-ddThh:mmZ" value="{{post_datetime}}" />
+</script>
 <button id="post_button">Post</button>
 {% if live_link %}
   Permalink: <a href={{ live_link }}>{{live_link}}</a>
