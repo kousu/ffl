@@ -30,17 +30,15 @@ $(document).ready(function() {
   editor.load();*/
   // since it's empty, we get the "Untitled" 
 
-  function upload(cmd, callback) {
-    var msg = {content: editor.exportFile(),
-		acl: $("#post_acl").val()};
-    msg.command = cmd;
-    $.post("/edit/", msg, callback);
-    return false; // stop bubbling
+  function upload(callback) {
   }
   Upload = upload
 
   $("#post_button").click(function() {
-    return upload("post", function(resp) {
+    
+    var msg = {content: editor.exportFile(),
+		acl: $("#post_acl").val()};
+    $.post("/edit/", msg, function(resp) {
       resp = JSON.parse(resp);
       if(resp.success == true) {
         console.log("Saved post"); //TODO: handle exceptions, which will come back as json I guess
@@ -50,12 +48,8 @@ $(document).ready(function() {
         }
       }
     }, "json");
-  });
 
-  $("#draft_button").click(function() {
-    return upload("draft", function() {
-      console.log("Saved draft"); //TODO: handle exceptions, which will come back as json I guess
-    });
+    return false; // stop bubbling
   });
 
 });
@@ -68,12 +62,12 @@ $(document).ready(function() {
 <textarea id="post_content" style="display: none">{{post_content}}</textarea>
 <input type=text placeholder="Aspects" id="post_acl" value="{{post_acl}}" />
 <button id="post_button">Post</button>
-<button id="draft_button">Save Draft</button>
 {% if live_link %}
   Permalink: <a href={{ live_link }}>{{live_link}}</a>
 {% endif %}
 
 <div id="instructions">
+  There is no draft-saving. Instead, set permissions to "private".<br/>
   <tt>Alt-F</tt> toggles Fullscreen<br/>
   <tt>Alt-P</tt> toggles Preview<br/>
 </div>

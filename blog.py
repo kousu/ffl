@@ -334,34 +334,29 @@ def editor(post=""):
 		slug = slugify(title)
 		
 		app.logger.debug("Received content for '%s' with ACL '%s'", post, msg['acl'])
-		if msg['command'] == "draft":
-			raise NotImplementedError("Draft saving is not implemented")
-			# XXX maybe it's better to skip drafts entirely and just tell people to lock things
-			# XXX we need a publishing date widget
-		elif msg['command'] == 'post':
-			app.logger.debug("Writing to disk")
-			# write to disk
-			# TODO: catch renames. a rename should wipe out the old files.
-			with open("_posts/" + slug + ".md","w") as md:
-				md.write(msg['content'])
-			with open("_posts/" + slug + ".acl","w") as acl:
-				acl.write(json.dumps(msg['acl'].lower().split()))
+		app.logger.debug("Writing to disk")
+		# write to disk
+		# TODO: catch renames. a rename should wipe out the old files.
+		with open("_posts/" + slug + ".md","w") as md:
+			md.write(msg['content'])
+		with open("_posts/" + slug + ".acl","w") as acl:
+			acl.write(json.dumps(msg['acl'].lower().split()))
+		
+		resp = {'success': True} #TODO: handle the case where the link
+		if slug != post:
+			# a rename happened
 			
-			resp = {'success': True} #TODO: handle the case where the link
-			if slug != post:
-				# a rename happened
-				
-				# get rid of the old copy
-				try: os.unlink("_posts/" + post + ".md")
-				except: pass
-				try: os.unlink("_posts/" + post + ".acl")
-				except: pass
-				
-				# tell the browser to jump
-				# TODO: do the thing where you change the URL without reloading the page
-				resp['goto'] = url_for("editor", post=slug);
+			# get rid of the old copy
+			try: os.unlink("_posts/" + post + ".md")
+			except: pass
+			try: os.unlink("_posts/" + post + ".acl")
+			except: pass
 			
-			return json.dumps(resp)
+			# tell the browser to jump
+			# TODO: do the thing where you change the URL without reloading the page
+			resp['goto'] = url_for("editor", post=slug);
+		
+		return json.dumps(resp)
 	
 	
 	if os.path.exists("_posts/" + post + ".md"):
@@ -371,15 +366,15 @@ def editor(post=""):
 		content = open("_posts/" + post + ".md").read()
 		# read the title out of the markdown
 		# the title is the first <h1> title, as far as we care
-		title = extract_title(content)
-		app.logger.debug("slug: %s, post: %s", slugify(title), post)
+		assert slugify(extract_title(content)) == post, "When loading an existing post, slug from the post content should equal the title in the URL of the page!"
 		live_link = url_for("view_post", path=post);
 	else:
+		# d
 		live_link = None
 		content = ""
-		title = None
-		acl = "+subscribers"
+		perms = "private"
 	return render_template('editor.html', blogtitle=BLOGTITLE, title="Editor", post_title=post, post_content=content, post_acl=perms, live_link=live_link)
+
 
 @app.before_request
 def q():
