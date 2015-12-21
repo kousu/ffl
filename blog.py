@@ -344,7 +344,8 @@ def editor(post=""):
 		with open("_posts/" + slug + ".acl","w") as acl:
 			acl.write(json.dumps(msg['acl'].lower().split()))
 		
-		resp = {'success': True} #TODO: handle the case where the link
+		resp = {}
+		app.logger.debug("POST /edit/%s: new slug=%s", post, slug) 
 		if slug != post:
 			# a rename happened
 			
@@ -377,6 +378,7 @@ def editor(post=""):
 		# d
 		live_link = None
 		content = "# Untitled\n\n\n" #<-- EpicEditor uses localStorage to automatically save drafts. this is a nice feature, but without managing it carefully it also means that 'new' posts get prefilled with whatever was last in the editor page on your browser
+		content = None
 		# I *did* set the default text (to trigger on value == "") in it to this string
 		# but that's ignored if there's anything saved in localStorage
 		# so whatever, fuck it, i'll fix it server-side

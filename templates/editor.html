@@ -23,39 +23,34 @@
 <script>
 
 $(document).ready(function() {
-  editor = new EpicEditor({basePath: '/static/epiceditor/',
+  var editor = new EpicEditor({basePath: '/static/epiceditor',
+                          // TODO: figure out how to nicely integrate localstorage.
+                          //  right now it's a nuisance because every load uses the same "filename": "epiceditor". this has the janky side effect that the last post you were editing (and even posted!) will show up when you make a new post
+                          // when instead I want "# Untitled" to appear
+                          file: { defaultContent: "# Untitled\n\n\n" },
+                          clientSideStorage: false, // so for now, disable entirely
                           textarea: 'post_content',
+
+                          // Make the buttons fixed
                           button: { bar: "show" },
                           focusOnLoad: true,
-                          file: { defaultContent: "# Untitled\n\n\n" },
-                          theme: {preview: "themes/preview/github.css"}
-                         }).load(); //Note: intentionally global
-  // wipe localstorage: it's a nuisance that other posts can show up
-  // so just ignore this feature
-  // getting it to work nicely would be awesome, though:
-  // work on you drafts entirely offline and then post them when you get signal, with nothing but a phone and a browser
-  /*editor.remove('epiceditor'); //
-  editor.open('epiceditor'); // and then we need to reopen the now-empty file
-  editor.unload();
-  editor.load();*/
-  // since it's empty, we get the "Untitled" 
+                          theme: {preview: "/themes/preview/github.css"}
+                         }).load();
 
-  function upload(callback) {
-  }
-  Upload = upload
+  //Note: intentionally global
 
   $("#post_button").click(function() {
     
-    var msg = {content: editor.exportFile(),
-		acl: $("#post_acl").val()};
-    $.post("/edit/", msg, function(resp) {
-      resp = JSON.parse(resp);
-      if(resp.success == true) {
-        console.log("Saved post"); //TODO: handle exceptions, which will come back as json I guess
-        if(resp.goto != "") {
-           console.log("jumping ship");
-           location = resp.goto;
-        }
+    var msg = {
+      content: editor.exportFile(),
+      acl:     $("#post_acl").val()
+              };
+    
+    $.post("", msg, function(resp) {
+      console.log("Saved post"); //TODO: handle exceptions, which will come back as json I guess (or as an..HTTP error code?)
+      if(resp.goto) {
+         console.log("jumping ship");
+         location = resp.goto;
       }
     }, "json");
 
