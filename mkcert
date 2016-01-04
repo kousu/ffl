@@ -1,0 +1,38 @@
+#!/bin/sh
+#
+# generates a self-signed CA and certificates signed by that CA.
+# If you install the CA into your certificate stores (in Firefox: Prefs->Advanced->Certs->Import, in Gnome: open the .crt in and whose .crt,.key pair can be used
+# worked out with http://www.akadia.com/services/ssh_test_certificate.html and trial and error
+# (as usual, with OpenSSL)
+
+case $1 in
+  "")
+    echo
+    echo "Generating self-signed certificate authority (CA)."
+    echo "--------------------------------------------------"
+    echo
+    echo "You will be asked to fill in details which should identify your new certificate authority."
+    echo "Luckily, no one ever looks at their cert stores so you can type anything you like."
+    echo "The only field that really matters is common name (CN)."
+    read -p
+    
+    openssl genrsa -out CA.key 4096 &&  #there's also -newkey rsa:4096 as an option to req, but a) it doesn't let us pick the name b) it doesn't let us make an unencrypted key
+    openssl req -new -key CA.key -out CA.csr &&
+    openssl x509 -req -in CA.csr -out CA.crt -signkey CA.key -days 365; #NOTE! -signkey, despite its name sounding like giving the key to sign with, actually is how we *cause* self-signed;
+    # TODO: *now* encrypt the key; there's a way to do this with 'openssl rsa'
+    rm CA.csr #don't need this anymore
+    ;;
+  *)
+    echo
+    echo "Generating $1.crt and $1.key, signed by the CA."
+    echo "-----------------------------------------------"
+    echo
+    openssl genrsa -out "$1".key 4096 &&
+    openssl req -new -key "$1".key -out "$1".csr -subj "/CN=$1" &&
+    # wtf is CA.srl for? why can we only create it when we're signing a sub-certificate??
+    openssl x509 -req -in "$1".csr -out "$1".crt    -CA CA.crt -CAkey CA.key   -CAcreateserial -days 3  &&
+    rm "$1".csr
+    ;;
+esac
+
+echo
