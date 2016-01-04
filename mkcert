@@ -5,6 +5,30 @@
 # worked out with http://www.akadia.com/services/ssh_test_certificate.html and trial and error
 # (as usual, with OpenSSL)
 
+# Usage:
+# ./mkcert   # and follow the prompts, to make a CA
+# ./mkcert my.domain.name
+# ./mkcert 4chan.tk
+# Find CA.crt and import it to your browser/OS cert stores.
+# For extra security, once you are done generating certs, *delete* CA.key. Then it cannot sign any more keys, but its signature can still be checked, via the magic of Public Key Crypto
+# For each domain, any server you run will need to be given the pair (domain.crt, domain.key). domain.crt is public knowledge, but hold domain.key safe (though the attack surface is faiiiiiirly small, since your self-signed CA won't exist except your own devices)
+# e.g. in python:
+# ```
+# httpd = http.server(('0.0.0.0',443), http.server.SimpleHTTPRequestHandler)
+# import ssl
+# ctx = ssl.SSLContext(ssl.PROTOCOL_TLSv1_2);
+# ssl.load_cert_chain("domain.crt", "domain.key"); #here you have to pass *both* files
+# httpd.socket = ssl.wrap_socket(httpd.socket);
+# httpd.serve_forever();
+# ```
+#
+# e.g. in apache.conf:
+# ```
+# SSLEngine on
+# SSLCertificateFile domain.crt
+# SSLCertificateKeyFile domain.key
+# ```
+
 case $1 in
   "")
     echo
