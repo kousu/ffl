@@ -25,3 +25,26 @@ also, this only supports OAuth2
 OAuth1.0 has a critical session-fixation bug (which should have been obvious, but hindsight is 20/20) and so should never be used.
 according to https://en.wikipedia.org/wiki/List_of_OAuth_providers, the only sites still on OAuth1.0a that I care about are Tumblr, Myspace and StatusNet)
  so i'll be happy just to get what I have
+
+
+------
+
+Setup
+=====
+
+OAuth2 MUST run over TLS, which means you MUST have a cert handy.
+So before you can actually try the code, you need to make up a cert.
+You can use `../mkcert` to construct a self-signed one quickly, or `letsencrypt`.
+If you use mkcert, make sure to import CA.crt into your browser certstore.
+
+Right now the code is hard-coded to assume you're testing on https://localhost:5000
+and have localhost.{crt,key} available. To create these, do
+```
+../mkcert #gen a CA
+../mkcert localhost
+rm CA.key CA.srl
+```
+if you tweak the code you can use other certs or other domains.
+You need not only self-sign your local machine.
+If you own domain.net and are testing on https://domain.net,
+ you can self-sign with `../mkcert domain.net`, and your browser will accept the cert so long as you've imported `CA.crt`.
