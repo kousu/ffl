@@ -32,7 +32,9 @@ according to https://en.wikipedia.org/wiki/List_of_OAuth_providers, the only sit
 Setup
 =====
 
-OAuth2 MUST run over TLS, which means you MUST have a cert handy.
+Setting this up requires configuration. **I'M SORRY**. It's not my fault, it's OAuth's and the PKI infrastructure and the web being full of terrible things.
+
+First, OAuth2 MUST run over TLS, which means you MUST have a cert handy.
 So before you can actually try the code, you need to make up a cert.
 You can use `../mkcert` to construct a self-signed one quickly, or `letsencrypt`.
 If you use mkcert, make sure to import CA.crt into your browser certstore.
@@ -48,3 +50,20 @@ if you tweak the code you can use other certs or other domains.
 You need not only self-sign your local machine.
 If you own domain.net and are testing on https://domain.net,
  you can self-sign with `../mkcert domain.net`, and your browser will accept the cert so long as you've imported `CA.crt`.
+
+
+Second, you need app keys. First, rename `credentials.yml.example` to `credentials.yml`.
+Then, for each provider, sign up for app keys.
+This is different for each provider, and managing these is the most tedious piece of configuration.
+Usually this means creating a developer account with the provider then finding the magic button buried in the settings that constructs an app.
+An "app" consists of at least a friendly name, an ID and a "secret". The ID/secret is a username/password pair for authenticating the app to the provider.
+ Some providers also demand that you tell them via their web UI what your callback URL is, or at least what domain you're planning to host on.
+ You can usually fill in "localhost" here, for testing, but don't rely on it.
+
+To find providers you can sign up, start with https://en.wikipedia.org/wiki/List_of_OAuth_providers
+Any provider listed in credentials.yml which has a corresponding provider hook in the code
+will be activated and listed on the WebUI.
+(to see the full list of implemented providers do ....)
+
+In theory, then you need to integrate the auth handler with the rest of your (web) app.
+For now, just make sure you have python-Flask installed and do `./wedo.py`
