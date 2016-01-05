@@ -1,6 +1,8 @@
 # from https://requests-oauthlib.readthedocs.org/en/latest/examples/facebook.html
-app_id = '939310079547587'
-app_secret = 'b3649fb08e6c25c56d3acf7a99382b35'
+import yaml
+cred = yaml.load(open("credentials.yml"))["facebook"]
+app_id = cred['id']
+app_secret = cred['secret']
 
 import logging
 logging.basicConfig(level=logging.DEBUG)
@@ -13,6 +15,8 @@ from requests_oauthlib import OAuth2Session
 from requests_oauthlib.compliance_fixes import facebook_compliance_fix
 S = OAuth2Session(app_id, redirect_uri=redirect_uri)
 S = facebook_compliance_fix(S)
+
+
 
 if __name__ == '__main__':
 	authorization_url, state = S.authorization_url(authorization_base_url)
