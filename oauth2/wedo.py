@@ -27,6 +27,29 @@ Facebook sells their login as "social auth" and that's 99% of what people use it
 
 """
 
+"""
+TODO:
+
+This is meant to only be an *identity* provider.
+This is meant to outdo http://psa.matiasaguirre.net/, which is ridiculously overengineered.
+
+
+[ ] Write providers as classes instead of a dict
+[ ] Extract user details to a useful user object~
+[ ] Make templates which render a login selector that jumps you to the correct login flow
+ - use https://github.com/lipis/bootstrap-social/; it's pure-CSS so I can render it without javascript hacks
+  [ ] OAuth1
+  [ ] OAuth2
+  [ ] OpenID
+  [ ] Email auth
+  [ ] User/password auth (?)
+[ ] Support scopes (---do I want to do this? really? if the goal is social sign in then I should never need any but the default scope)
+[ ] Auto-load compliance fixes
+[ ] Support other web frameworks besides Flask
+[ ] Support non-web ??
+
+"""
+
 import yaml
 
 from urllib.parse import *
@@ -145,7 +168,8 @@ if __name__ == '__main__':
 # --- you could maybe fix this with public key crypto, couldn't you?
 
 
-def urlnormalize(url):
+def urlstrip(url):
+	# return url # if you uncomment this, Facebook breaks because you end up sending two different redirect_uris to it. I'm hanging onto this for now because 
 	"normalize a URL to just the REST-ful object path part (i.e. scheme, host, path)"
 	(scheme, netloc, path, _, _, _) = urlparse(url)
 	return urlunparse((scheme, netloc, path, "", "", ""))
@@ -178,16 +202,27 @@ def oauth2(provider):
 	p = p()
 	p.__dict__.update(PROVIDERS[provider]) #import token_url, app_id, etc into the local namespace
 	
-	# Facebook enforces that you use a consistent redirect_uri
-	# but by using plain request.url, the second time we come around we get something like https://localhost:5000/oauth2/facebook?code=AQABl4ziZe9QsS1ZmT9QS1K5gZFV88M7YD5F0jGHcfuFKxFAF1QvqamERgXYSyHfYSFwnyrcyvmx1lQnJPMucUVI0VDr4OQIbHDafsnGKed65A6OLWbgH5SxQIu--IWC14bDvUMeIP5QcXgHKa5RTG755YqDGBDSn9fUxI_RioLrwzLyMiSad1E2ygK4Slofh6P0gcKZ4GDvAnaQHLFrBDhtZ7o-w-Wgv2VWkdjvsrrS75uFfa0-Ms_Cbg8-tLXJO7FGvfMJRZ1fJZo6x5_l0C3SvVIdNthwEf4T_Z0Ya7bg4dK9MHnHkTijhiETIHBvebwTRFm3FTgMB1R5BBqk8fax&state=64z2IR2IYZJ1l96DckFgmnNbnJcVjQ
-	# which, as written, gets then sent right back to Facebook who says "this URL doesn't match!" and fails
-	# TODO: does facebook tolerate simply not sending redirect_uri on fetch_token()? that would be a cleaner fix.
-	S = OAuth2Session(p.app_id, redirect_uri=urlnormalize(request.url))
+	# An OAuth "app" is an account stored at provider which consists of
+	#  at least (name, app_id, app_secret, callback)
+	# redirect_uri is callback_uri, and it is where.
+	# Providers have different rules about what callback is; Github wants it to be a prefix of a URI that you'll send as redirect_uri
+	# Facebook lets you leave it blank but makes you fill in a domain name and checks that at least that matches.
+	# 
+
+	# We want this one endpoint to handle *all* the callbacks for all the providers,
+	# so we set redirect_uri to request.url (e.g. https://localhost:5000/oauth2/facebook)
+	# but we need it normalized because during the callback we get something like https://localhost:5000/oauth2/facebook?code=AQABl4ziZe9QsS1ZmT9QS1K5gZFV88M7YD5F0jGHcfuFKxFAF1QvqamERgXYSyHfYSFwnyrcyvmx1lQnJPMucUVI0VDr4OQIbHDafsnGKed65A6OLWbgH5SxQIu--IWC14bDvUMeIP5QcXgHKa5RTG755YqDGBDSn9fUxI_RioLrwzLyMiSad1E2ygK4Slofh6P0gcKZ4GDvAnaQHLFrBDhtZ7o-w-Wgv2VWkdjvsrrS75uFfa0-Ms_Cbg8-tLXJO7FGvfMJRZ1fJZo6x5_l0C3SvVIdNthwEf4T_Z0Ya7bg4dK9MHnHkTijhiETIHBvebwTRFm3FTgMB1R5BBqk8fax&state=64z2IR2IYZJ1l96DckFgmnNbnJcVjQ
+	# which is technically wrong, certainly wasteful, and actively pisses off at least Facebook who says "this URL doesn't match!" and fails the fetch_token()
+	S = OAuth2Session(p.app_id,
+	                  redirect_uri=urlstrip(request.url))
+	
+	
 	if provider == 'facebook': #HACK
+		# TODO: scan requests_oauthlib.compliance_fixes to find all the fixes and apply the correct one
+		# requires assuming that we choose consistent provider names, but I think we can probably make that happen
 		S = facebook_compliance_fix(S) #arrrgh
 	
-	# first, figure out if we're the initial click or a callback
-	
+	# We figure out if we're the initial click or a callback
 	if request.args.get("code") is None:
 		# Initial click
 		url, session['oauth_state'] = S.authorization_url(p.auth_url)
@@ -198,29 +233,11 @@ def oauth2(provider):
 		# Callback! Fetch a token!
 		S._state = session['oauth_state']
 		
-		# NOTICE: we *didn't* reload the state from the query string
+		# NOTICE: we *don't* reload the state from the query string, instead it's from the session
 		# this protects against CSRF by .....
-		# (the actual check is buried in oauthlib.oauth2.rfc6749.parameters.parse_authorization_code_response())	
-		#import IPython; IPython.embed()
-		app.logger.info("token_url = %s", p.token_url)
-		app.logger.info("auth response = %s", request.url)
-		app.logger.info("secret = %s", p.app_secret)
+		# (the actual check is buried in oauthlib.oauth2.rfc6749.parameters.parse_authorization_code_response())
 		
-		#DEBUG
-		# force states to match
-		#S._state = parse_qs(urlparse(request.url).query)['state'][0]
-		
-		# 
-		#app.logger.info("this line is a shit")
-		#app.logger.info("S.fetch_token(%r, authorization_response=%r, client_secret=%r)" % (p.token_url, request.url, p.app_secret))
-		#app.logger.info("or maybe you prefer")
-		#app.logger.info("S.fetch_token(%r, client_secret=%r, authorization_response=%r)" % (p.token_url, p.app_secret, request.url))
-		#input("press enter to fetch token")
-		
-		#print("-------->>>>>")
-		#print("fetching token")
 		token = S.fetch_token(p.token_url, authorization_response=request.url, client_secret=p.app_secret)
-		
 		
 		user = p.whoami(S) #call the user-id extracting callback
 		userid = user['id']
