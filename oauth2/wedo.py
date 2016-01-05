@@ -145,12 +145,19 @@ if __name__ == '__main__':
 # --- you could maybe fix this with public key crypto, couldn't you?
 
 
+def urlnormalize(url):
+	"normalize a URL to just the REST-ful object path part (i.e. scheme, host, path)"
+	(scheme, netloc, path, _, _, _) = urlparse(url)
+	return urlunparse((scheme, netloc, path, "", "", ""))
 
 
 def logged_in(u):
 	session['userid'] = u
 	app.logger.info("%s logged in.", u)
 	return redirect("/")
+
+import logging
+logging.basicConfig(level=logging.DEBUG) # turn up logging so we can see inside requests_oauthlib
 
 
 @app.route("/oauth2/<provider>")
@@ -171,7 +178,11 @@ def oauth2(provider):
 	p = p()
 	p.__dict__.update(PROVIDERS[provider]) #import token_url, app_id, etc into the local namespace
 	
-	S = OAuth2Session(p.app_id, redirect_uri=request.url)
+	# Facebook enforces that you use a consistent redirect_uri
+	# but by using plain request.url, the second time we come around we get something like https://localhost:5000/oauth2/facebook?code=AQABl4ziZe9QsS1ZmT9QS1K5gZFV88M7YD5F0jGHcfuFKxFAF1QvqamERgXYSyHfYSFwnyrcyvmx1lQnJPMucUVI0VDr4OQIbHDafsnGKed65A6OLWbgH5SxQIu--IWC14bDvUMeIP5QcXgHKa5RTG755YqDGBDSn9fUxI_RioLrwzLyMiSad1E2ygK4Slofh6P0gcKZ4GDvAnaQHLFrBDhtZ7o-w-Wgv2VWkdjvsrrS75uFfa0-Ms_Cbg8-tLXJO7FGvfMJRZ1fJZo6x5_l0C3SvVIdNthwEf4T_Z0Ya7bg4dK9MHnHkTijhiETIHBvebwTRFm3FTgMB1R5BBqk8fax&state=64z2IR2IYZJ1l96DckFgmnNbnJcVjQ
+	# which, as written, gets then sent right back to Facebook who says "this URL doesn't match!" and fails
+	# TODO: does facebook tolerate simply not sending redirect_uri on fetch_token()? that would be a cleaner fix.
+	S = OAuth2Session(p.app_id, redirect_uri=urlnormalize(request.url))
 	if provider == 'facebook': #HACK
 		S = facebook_compliance_fix(S) #arrrgh
 	
@@ -181,6 +192,7 @@ def oauth2(provider):
 		# Initial click
 		url, session['oauth_state'] = S.authorization_url(p.auth_url)
 		app.logger.info("auth url = %s", url)
+		#input("press enter to continue")
 		return redirect(url)
 	else:
 		# Callback! Fetch a token!
