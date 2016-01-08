@@ -121,7 +121,7 @@ class User(object):
 		self.provider = provider
 		self.id = id
 		self.login = login
-		self.name = name
+		self.display_name = name
 		self.avatar = avatar
 	
 	@property
@@ -140,7 +140,12 @@ class Provider(object):
 	pass
 
 
-class MailTo(Provider):
+class Mobile(Provider):
+	# i.e. SMS
+	# <i class="fa fa-mobile"></i> https://fortawesome.github.io/Font-Awesome/icon/mobile/
+	pass
+
+class Email(Provider):
 	# uhh, this isn't an OAuth provider sooooo I need to rethink stuff a bit
 	# to prove you own an email, we send a token to that address and you paste it back to us,
 	# either by clicking a link with the token embedded or by copy-pasting it directly at us
@@ -317,11 +322,11 @@ def load_user():
 	if 'user' in session:
 		current_user = User.loadJSON(session['user'])
 
-def login(user):
+def login_user(user):
 	"log user in. This is a mock for Flask-Login's login()"
 	session['user'] = user.dumpJSON()
 
-def logout():
+def logout_user():
 	"log user out. This is a mock for Flask-Login's login()"
 	if 'user' in session:
 		del session['user']
@@ -390,24 +395,30 @@ def oauth2(provider):
 		return redirect("/")
 
 
+@app.route('/user/<userid>')
+def user(userid):
+	user = None #TODO: load user based on userid. but maybe i don't care about this, actually.
+	return render_template("user.html", user=user)
+
 @app.route('/')
 def index():
-	if current_user:
-		args = dict(current_user.__dict__) #copy
-		args['urn'] = current_user.urn #this wasn't in the copy because it's a property. oh dear. leaky abstraction!
-		return "Hello %(name)s. <img alt='%(name)s' title='%(name)s' src='%(avatar)s' />. Your ID to me is %(urn)s and your username over there is %(login)s." % args   +\
-		       " <form action='%s' method='POST'><button>Logout</button></form>" % (url_for("logout"),)
-	else:
-		return "Try <a href='%s'>logging in</a>." % (url_for("oauth2", provider="github"))
+	return render_template("index.html", **locals())
 
 @app.route('/logout', methods=["POST"])
-def logout_view():
+def logout():
 	"""
 	# TODO: implement CSRF protection
 	# ( this requires... WTForms? I think? )
 	"""
-	logout()
+	logout_user()
 	return redirect("/")
+
+@app.route("/login")
+@app.route("/login/<provider>")
+def login(provider=None):
+	# TODO: put the rendering *into* each provider? so we just say /login/<provider>, find the provider, and do their code?
+	return render_template("login.html", providers=list(PROVIDERS.keys()))
+
 
 if __name__ == '__main__':
 	app.debug = True

@@ -1,0 +1,13 @@
+{% extends "_layout.html" %}
+{% block content %}
+  <h1>{{ Login }}</h1>
+  Choose what identity provider to use:
+  {% for name in providers %}
+    <a class="btn btn-block btn-social btn-lg btn-{{ name }}" href="{{ url_for("login", provider=name) }}">
+      <span class="fa fa-{{name}}"></span>Login with {{ name.title() }}
+   </a>
+  {% endfor %}
+<br/>
+<a class="btn btn-block btn-social btn-lg btn-linkedin"><i class="fa fa-linkedin"></i>Sign in with LinkedIn</a>
+{% endblock %}
+
