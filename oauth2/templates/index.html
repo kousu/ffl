@@ -1,7 +1,83 @@
 {% extends "_layout.html" %}
 {% block content %}
-  <h1>{{ blogtitle }}</h1>
+  <h1>"Easy" (social) sign-in plugin</h1>
+  <!-- "omniauth" "*-auth", "multiauth" ? "python-omniauth" -->
   <section>
+  <p>This demonstrates a <a href="http://requests-oauthlib.readthedocs.org/">requests-oauthlib</a>-based social-sign-in plugin.
+  It is meant to be a simpler alternative to <a href="http://psa.matiasaguirre.net/">python-social-auth</a>.</p>
+
+
+  <p>This lib doesn't escape the onerous registration problem of OAuth, but it makes the rest of implementation a lot smoother and allows you to skip OAuth if you don't want it.</p>
+  
+  <p>We support multiple identity providers in one API.
+  For our purposes an identity (<code>current_user.id</code>) is a string "provider:address".
+  For example "facebook:49353534543", "mailto:nick@kousu.ca", "openid:http://harrypotterxxmalfoy.livejournal.com",</p>
+  <p>We have no notion of merged identities; if someone subscribes twice with different accounts, they <b>should</b> show up as different accounts,
+  and it'll be up to them to say "oh yeah, by the way, this is also me".
+  </p>
+  <p>This lib <em>only</em> focuses on consuming identity: it asks a visitor to prove that they are someone, then based on knowing who your code can react differently.
+  In other words, this is an authentication library.
+  OAuth is an authorization library, and allows many many more things to happen than just proving you own a particular address (for varying definitions of address);
+  we do not expose any of that.
+  </p>
+
+  <p>Users can authenticate with these providers:
+  <ul>
+  <li> Username/password
+    <ul><li>the traditional give-me-a-password-and-i'll-remember-it deal</li></ul>
+  </li>
+  <li> Email
+    <ul><li>sends a token to the given address. The user clicks the link and returns the token</li></ul>
+  </li>
+  <li> SMS
+    <ul>
+     <li>same scheme as Email, except that the codes are shorter so that they aren't onerous to type manually from a phone to the site</li>
+     <li>requires set up: you need to pay for an SMS bridge; currently [I plan to support] <a href="https://www.twilio.com/">Twilio</a> for no better reason than that they have good python starter code) </li>
+    </ul>
+  </li>
+  <li> Any OpenID server 
+   <ul><li> (so, Livejournal and Yahoo and Vk, basically; OpenID is dead :( )</li></ul>
+  </li>
+  <li> Most OAuth providers. 
+   <ul><li>By far the most widely deployed identity scheme, if you don't count email (which some people don't)</li>
+       <li>Works by bumping you over to the OAuth provider, waiting for you to auth or not auth, and then running provider-specific glue code which extracts your basic profile data.</li>
+       <li>(requires registering your site with each provider, which is a total bitch</li></ul>
+  </li>
+  <li> <a href="https://indieauth.com/">IndieAuth</a>? </a>
+   <ul><li>(just to add an extra layer of indirection to an already complicated system) </li></ul>
+  </li>
+  <li> Pseudoanonymous throwaway identity</li>
+  <li> Token
+    <ul><li>For each user created by one of the other methods, a token is generated (much like a session cookie).
+            Going to /login/token?t=&lt;token&gt;&amp;next=&lt;url&gt; will log you in and bump you over to the given URL</li>
+        <li>combine this with RSS to make personalized RSS feeds</li>
+        <li>bookmark it to be able to browse the site logged-in.</li>
+    </ul>
+  </li>
+ 
+  </ul>
+  <p>
+  Consider not enabling username/password login. It requires keeping something that looks like an account around, and those suck and people hate them.
+  </p>
+
+  <p>
+  Email and SMS auth are totally separate from username auth in this system.
+  Using them is like signing into sites by *always* doing "forgot password" and immediately forgetting it again once you're in, just without the hassle of actually picking a password.
+  </p>
+  
+  <em>Token</em> is special, and you may also not wish to enable it.
+  Since it is sent back in a GET request there is a CSRF vuln! The vuln doesn't allow editing accounts, but what it does allow is an attacker to silently log you in as someone else, i.e. session-pinning.
+  If you don't notice the pinning you might. Because of this, you should not enable.
+
+  It allows skipping reauthentication, which means a token is like an infinite password, one that can even outlive the original account.
+  For this reason, tokens can be revoked or changed, and your site should incorporate expiry notices so that your subscribers can get a new token.
+  For the use cases I have in mind, like bookmarks, the token should be permanent.
+  Reauthing OAuth and OpenID is transparent if you're already logged in to your provider, but email, SMS and username can be annoying.
+  Note well that token authd allows the pseudoanon accounts to be kept instead of immediately tossed by providing a way to re-log in to them.
+  </p>
+  
+  
+
   </section>
 {% endblock %}
 

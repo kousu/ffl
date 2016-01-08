@@ -1,8 +1,10 @@
 {% extends "_layout.html" %}
 {% block content %}
-  <h1>{{ Login }}</h1>
-  Choose what identity provider to use:
+
   <div style='width: 30%; margin-left: auto; margin-right: auto'>
+  <h1>Login</h1>
+  <br/>
+  Choose how you want to be known:
   {% for p in providers %}
     <a class="btn btn-block btn-social btn-lg btn-{{ p.icon }}" href="{{ url_for("login", provider=p.__name__.lower()) }}">
       <span class="fa fa-{{p.icon}}"></span>Login with {{ p.name }}
@@ -12,3 +14,7 @@
 <br/>
 {% endblock %}
 
+
+{% block nav %}
+<!-- wipe out the generic nav block when on the login page -->
+{% endblock %}
