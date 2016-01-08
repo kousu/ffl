@@ -108,6 +108,15 @@ class User(object):
 
 	"""
 	
+	@classmethod
+	def loadJSON(cls, data):
+		data = json.loads(data)
+		return cls(**data)
+	
+	def dumpJSON(self):
+		return json.dumps(self.__dict__)
+	
+	
 	def __init__(self, provider, id, login=None, name=None, avatar=None):
 		self.provider = provider
 		self.id = id
@@ -198,7 +207,7 @@ class Github(OAuth2Provider):
 		"""
 		profile = session.get("https://api.github.com/user").json()
 		logging.debug("Received this profile from github:\n--------------\n%s\n--------------", pformat(profile))
-		return User("github", profile['id'], profile['login'], profile['name'], profile['avatar_url'])
+		return User("github", profile['id'], profile['login'], profile['name'], profile['avatar_url']+"&s=50") # the &s=50 makes github resize the picture to 50x50 before replying (this matches the only size Facebook will give out)
 		#return {k: v for k,v in profile.items() if k in ['id', 'name', 'login']}
 
 
@@ -295,21 +304,27 @@ def urlstrip(url):
 	return urlunparse((scheme, netloc, path, "", "", ""))
 
 
-#HACK: for prototyping, instead of pulling in Flask-Login, I just use a global as a shitty replacement
-# using Flask-Login makes current_user thread (i.e. per request) local, even though it's a global, via proxy magic
-current_user = None
+# Since I don't have a database set up, store the entire user in the session cookie.
+# To do this transparently would require somehow overriding flask.session.SecureCookieSessionInterface.serializer to understand more types
+# which sounds.. hard
+# so instead I'm just going to manually save/load to JSON
+# This bloats the session cookie, but hoooooopefully not by too much.
+
 @app.before_request
-def kill_user():
+def load_user():
 	global current_user
-	#current_user = None
+	current_user = None
+	if 'user' in session:
+		current_user = User.loadJSON(session['user'])
 
+def login(user):
+	"log user in. This is a mock for Flask-Login's login()"
+	session['user'] = user.dumpJSON()
 
-def logged_in(u):
-	session['userid'] = u.urn
-	global current_user
-	current_user = u
-	app.logger.info("%s logged in. We know %s", u, pformat(u.__dict__))
-	return redirect("/")
+def logout():
+	"log user out. This is a mock for Flask-Login's login()"
+	if 'user' in session:
+		del session['user']
 
 
 
@@ -369,28 +384,29 @@ def oauth2(provider):
 		
 		user = provider.whoami(S) #call the user-id extracting callback
 		
-		# call the logged-in callback
-		# this needs to be like Flask-Login login(), except it has to also tolerate creating accounts
-		return logged_in(user)
+		# TODO: provide a hook so that on login
+		login(user)
+		
+		return redirect("/")
 
 
 @app.route('/')
 def index():
-	
-	
-	
-	if 'userid' in session:
+	if current_user:
 		args = dict(current_user.__dict__) #copy
 		args['urn'] = current_user.urn #this wasn't in the copy because it's a property. oh dear. leaky abstraction!
-		return "Hello %(name)s. <img alt='%(name)s' src='%(avatar)s' />. Your ID to me is %(urn)s and your username over there is %(login)s." % args   +\
+		return "Hello %(name)s. <img alt='%(name)s' title='%(name)s' src='%(avatar)s' />. Your ID to me is %(urn)s and your username over there is %(login)s." % args   +\
 		       " <form action='%s' method='POST'><button>Logout</button></form>" % (url_for("logout"),)
 	else:
 		return "Try <a href='%s'>logging in</a>." % (url_for("oauth2", provider="github"))
 
 @app.route('/logout', methods=["POST"])
-def logout():
-	if 'userid' in session:
-		del session['userid']
+def logout_view():
+	"""
+	# TODO: implement CSRF protection
+	# ( this requires... WTForms? I think? )
+	"""
+	logout()
 	return redirect("/")
 
 if __name__ == '__main__':
