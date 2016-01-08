@@ -119,50 +119,55 @@ class User(object):
 	
 	def __init__(self, provider, id, login=None, name=None, avatar=None):
 		self.provider = provider
-		self.id = id
+		self._id = id
 		self.login = login
 		self.display_name = name
 		self.avatar = avatar
 	
 	@property
-	def urn(self):
+	def id(self):
 		"""
 		Return a globally unique ID string for this user.
 		This is what should be used as a primary key in a database
 		"""
-		return "%s:%s" % (self.provider, self.id)
+		return "%s:%s" % (self.provider, self._id)
 
 
 class Provider(object):
 	"""
 	Base class for authentication providers.
 	"""
-	pass
+	name = None
+	icon = None #shortcode used to refer to this provider in URLs and CSS and such
+	 #ah, separate presentation from logic: it might not be possible to use the same code across bootstrap-social and requests-oauthlib and elsewhere...
 
 
-class Mobile(Provider):
+class SMS(Provider):
 	# i.e. SMS
 	# <i class="fa fa-mobile"></i> https://fortawesome.github.io/Font-Awesome/icon/mobile/
-	pass
+	name = "Mobile Phone"
+	icon = "mobile" #code = "tty" is also good
 
 class Email(Provider):
 	# uhh, this isn't an OAuth provider sooooo I need to rethink stuff a bit
 	# to prove you own an email, we send a token to that address and you paste it back to us,
 	# either by clicking a link with the token embedded or by copy-pasting it directly at us
-	pass
+	name = "Email"
+	icon = "envelope"
 
 class Local(Provider):
 	# TODO
 	# this would be the username/password option, I guess
-	pass
+	name = "Username/Password"
+	icon = "sign-in"
 
-class Anonymoose(Provider):
+class Pseudoanon(Provider):
 	# TODO
 	# this is the pseudoanonymous option, where there is no way to prove
 	# my idea is: click once on a subscribe link, possibly fill in a profile (that is, name and avatar, but not login!) and an account is generated for you, along with an auth token
 	# then to get back in you must click the auth token link. there's no username or password
-	pass
-
+	name = "Pseudoanomity"
+	icon = "barcode" #"asterisk"?
 
 
 class OAuth2Provider(Provider):
@@ -202,6 +207,9 @@ class Github(OAuth2Provider):
 	auth_url = 'https://github.com/login/oauth/authorize'
 	token_url = 'https://github.com/login/oauth/access_token'
 	
+	name = "GitHub"
+	icon = "github"
+	
 	@staticmethod
 	def whoami(session):
 		"""
@@ -227,6 +235,9 @@ class Facebook(OAuth2Provider):
 	"""
 	auth_url = 'https://www.facebook.com/dialog/oauth'
 	token_url = 'https://graph.facebook.com/oauth/access_token'
+	
+	name = "Facebook"
+	icon = "facebook"
 	
 	@staticmethod
 	def whoami(session):
@@ -417,7 +428,7 @@ def logout():
 @app.route("/login/<provider>")
 def login(provider=None):
 	# TODO: put the rendering *into* each provider? so we just say /login/<provider>, find the provider, and do their code?
-	return render_template("login.html", providers=list(PROVIDERS.keys()))
+	return render_template("login.html", providers=[PROVIDERS[p] for p in sorted(PROVIDERS)])
 
 
 if __name__ == '__main__':
