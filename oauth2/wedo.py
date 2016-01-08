@@ -238,17 +238,19 @@ del PROVIDERS['provider'] #remove cruft
 
 
 
-def load_credentials(fname="credentials.yml"):
+def load_oauth2_credentials(fname="credentials.yml"):
 	"merge on-disk app credentials into global PROVIDERS"
+	"beware: OAuth2Provider is written assuming you'll instantiate it with app_{id,secret}, but instead this attaches directly to the class; the only method is static, so either way works right now"
 	credentials = yaml.load(open(fname))
-	
+	global PROVIDERS
 	for provider in list(PROVIDERS.keys()): #listification is because we're editing the dict as we loop over it so we need to protect
-		if provider not in credentials or 'id' not in credentials[provider] or 'secret' not in credentials[provider]:
-			#app.logger.warn("Missing '%s' app credentials." % (provider,))
-			del PROVIDERS[provider]
-		else:
-			PROVIDERS[provider].app_id = credentials[provider]['id']
-			PROVIDERS[provider].app_secret = credentials[provider]['secret']
+		if issubclass(PROVIDERS[provider], OAuth2Provider):
+			if provider not in credentials or 'id' not in credentials[provider] or 'secret' not in credentials[provider]:
+				#app.logger.warn("Missing '%s' app credentials." % (provider,))
+				del PROVIDERS[provider]
+			else:
+				PROVIDERS[provider].app_id = credentials[provider]['id']
+				PROVIDERS[provider].app_secret = credentials[provider]['secret']
 	app.logger.info("Available authorization providers:\n%s", "\n".join("* " + e for e in sorted(PROVIDERS.keys())))
 
 	
@@ -371,7 +373,7 @@ if __name__ == '__main__':
 	app.debug = True
 	app.secret_key = "butts"
 	
-	load_credentials()
+	load_oauth2_credentials()
 
 	import ssl
 	t = ssl.SSLContext(ssl.PROTOCOL_TLSv1_2)
