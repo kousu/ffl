@@ -34,12 +34,12 @@ This is meant to only be an *identity* provider.
 This is meant to outdo http://psa.matiasaguirre.net/, which is ridiculously overengineered.
 
 
-[ ] Write providers as classes instead of a dict
-[ ] Extract user details to a useful user object~
+[x] Write providers as classes instead of a dict
+[x] Extract user details to a useful user object
 [ ] Make templates which render a login selector that jumps you to the correct login flow
  - use https://github.com/lipis/bootstrap-social/; it's pure-CSS so I can render it without javascript hacks
   [ ] OAuth1
-  [ ] OAuth2
+  [x] OAuth2
   [ ] OpenID
   [ ] Email auth
   [ ] User/password auth (?)
@@ -47,7 +47,11 @@ This is meant to outdo http://psa.matiasaguirre.net/, which is ridiculously over
 [ ] Auto-load compliance fixes
 [ ] Support other web frameworks besides Flask
 [ ] Support non-web ??
-
+[ ] Cheat: translate Facebook app-scoped UIDs to global UIDs
+  -- apparently Facebook didn't actually make app-scoped IDs local to each app
+  and they provide "https://www.facebook.com/app_scoped_user_id/<id>
+  the catch is you have to be logged in to follow it
+  but you can use *any* account to follow the link and get jumpped over to facebook.com/<username> (and by screen-scraping you can also find the global user ID)
 """
 
 import yaml
@@ -59,7 +63,11 @@ from requests_oauthlib.compliance_fixes import facebook_compliance_fix
 
 from flask import *
 
-from pprint import pformat
+from pprint import pformat, pprint
+
+import logging
+logging.basicConfig(level=logging.DEBUG) # turn up logging so we can see inside requests_oauthlib
+	# note that this logger is *not* the same as the Flask logger
 
 
 
@@ -77,56 +85,161 @@ app.debug = True
 # a useful quirk of OAuth is that the callback URL *can be localhost*, because the auth code is passed via the client
 
 
-def github_userid(session):
+class User(object):
 	"""
-	id: numeric account ID
-	name: freeform real-name
-	login: username (note! github allows changing this! so treat it like a freeform name!)
-	"""
-	profile = session.get("https://api.github.com/user").json()
-	return {k: v for k,v in profile.items() if k in ['id', 'name', 'login']}
-
-def facebook_userid(session):
-	"""
-	id: numeric account ID (note! IDs are *app scoped*)
-	name: freeform real-name
+	Base class for Represent a user, a single person, or at least a single identity.
+	This class does not enforce any sort of constraints: *SECURITY IS NOT HERE*. You must make sure not to hand out User objects unless you have some external sort of auth.
 	
-	App-Scoping: <https://developers.facebook.com/docs/graph-api/reference/user/>: " This ID is unique to each app and cannot be used across different apps."
-	  i.e. the ID this gives is *not* the ID you use in https://facebook.com/profile.php?id=<....>
-	 to prevent apps (easily) colluding and tracking users.
-	 you can ask for field "link" but it just gives like https://www.facebook.com/app_scoped_user_id/297049897162674
-         which does send you to the right place but requires being logged in(??) on top of having an access token, which is a bitch and probably against the ToS.
-	So it doesn't seem possible.
-	"""
-	profile = session.get("https://graph.facebook.com/v2.5/me").json()
-	return {k: v for k,v in profile.items() if k in ['id', 'name']}
+	* provider is a string identifying the identity server ("github", "facebook", these should be pretty globally unique: use https://github.com/lipis/bootstrap-social/ as a guideline)
+	 * you could also use non-providers, like "anonymous", "local", "mailto" or "xmpp", so long as you have a way for the user to prove they own the address
+	* id uniquely identifies the user within the world of `provider`
+	* .urn combines these into a URN as "$provider:$id"
+	
+	The optional extra fields are:
+	* login is the username someone has on a site; this is typically different than their ID number, and lots of sites even allow changing it.
+	* name is a full name, which should be displayed
+	* ~avatar should be a URL (note: data: urls with encoded images are allowed here, if that's what the site gives or if you want to rip the image locally.
+	Feel free to extend this class with more details if appropriate.
+	 extension ideas:
+		- something that holds onto the OAuth token
 
-# this clusterfuck is because OAuth couldn't just spec something like "OAuth is a RESTful protocol and it MUST live at site.com/oauth/". bastards.
-# these details extracted by dicking around
-# TODO: use https://lipis.github.io/bootstrap-social/
-PROVIDERS = {
- # https://developers.facebook.com/docs/facebook-login and
- # https://requests-oauthlib.readthedocs.org/en/latest/examples/facebook.html
- # To get Facebook working, first you need to set your account to developer mode, then [verify your account](https://www.facebook.com/help/167551763306531#How-do-I-verify-my-developer-account?),
- # then register an app at https://developers.facebook.com/apps/
- # in the app, click "Add Platform", choose "Web", type a URL (arggggh) to lock the oauth to that URL. However, you *can* set this to localhost.
- 'facebook': {
-   'auth_url': 'https://www.facebook.com/dialog/oauth',
-   'token_url': 'https://graph.facebook.com/oauth/access_token',
-   'whoami': facebook_userid,
-  },
- 
- # https://developer.github.com/v3/oauth/
- 'github': {
-    'auth_url': 'https://github.com/login/oauth/authorize',
-    'token_url': 'https://github.com/login/oauth/access_token',
-    'whoami': github_userid,
-  }
-}
+	"""
+	
+	def __init__(self, provider, id, login=None, name=None, avatar=None):
+		self.provider = provider
+		self.id = id
+		self.login = login
+		self.name = name
+		self.avatar = avatar
+	
+	@property
+	def urn(self):
+		"""
+		Return a globally unique ID string for this user.
+		This is what should be used as a primary key in a database
+		"""
+		return "%s:%s" % (self.provider, self.id)
+
+
+class Provider(object):
+	"""
+	Base class for authentication providers.
+	"""
+	pass
+
+
+class MailTo(Provider):
+	# uhh, this isn't an OAuth provider sooooo I need to rethink stuff a bit
+	# to prove you own an email, we send a token to that address and you paste it back to us,
+	# either by clicking a link with the token embedded or by copy-pasting it directly at us
+	pass
+
+class Local(Provider):
+	# TODO
+	# this would be the username/password option, I guess
+	pass
+
+class Anonymoose(Provider):
+	# TODO
+	# this is the pseudoanonymous option, where there is no way to prove
+	# my idea is: click once on a subscribe link, possibly fill in a profile (that is, name and avatar, but not login!) and an account is generated for you, along with an auth token
+	# then to get back in you must click the auth token link. there's no username or password
+	pass
+
+
+
+class OAuth2Provider(Provider):
+	"""
+	sub-base class for OAuth2 identity providers
+
+	
+	Holds the remote OAuth endpoints in {auth,token}_url,
+	and at init stores the app_{id, secret} strings that you need to get by registering a developer account with the OAuth provider,
+	and has the whoami() method which is called after OAuth completes to extract account details
+	 (because OAuth is an authorization not, directly, an authentication protocol)
+	
+	Naming matters! Your subclasses must match the names shared between oauth-dropins/bootstrap-social/, because it gets scraped to generate identifying strings.
+	 (but you can choose your own capitalization; they are .lower()ed before use)
+
+	This clusterfuck is because OAuth couldn't just spec something like "OAuth is a RESTful protocol and it MUST live at site.com/oauth/". bastards.
+	 each site's URLs have to be researched, and kept up to date,
+	 and further each site has to have custom code for extracting identity information once you've got an auth token.
+	"""
+	auth_url = None
+	token_url = None
+	
+	def __init__(self, id, secret):
+		self.app_id = id
+		self.app_secret = secret #TODO: check types
+	
+	@staticmethod
+	def whoami(session):
+		assert isinstance(session, requests.Session)
+		raise NotImplementedError
+
+#OAuth-dropins decided to use inheritence, not composition: each provider subclasses 
+# prefer composition to inheritence!
+
+class Github(OAuth2Provider):
+	#  # https://developer.github.com/v3/oauth/
+	auth_url = 'https://github.com/login/oauth/authorize'
+	token_url = 'https://github.com/login/oauth/access_token'
+	
+	@staticmethod
+	def whoami(session):
+		"""
+		returns:
+		id: numeric account ID
+		name: freeform real-name
+		login: username (note! github allows changing this! so treat it like a freeform name!)
+		"""
+		profile = session.get("https://api.github.com/user").json()
+		logging.debug("Received this profile from github:\n--------------\n%s\n--------------", pformat(profile))
+		return User("github", profile['id'], profile['login'], profile['name'])
+		#return {k: v for k,v in profile.items() if k in ['id', 'name', 'login']}
+
+
+class Facebook(OAuth2Provider):
+	"""
+	https://developers.facebook.com/docs/facebook-login and
+	https://requests-oauthlib.readthedocs.org/en/latest/examples/facebook.html
+	
+	To get Facebook working, first you need to set your account to developer mode, then [verify your account](https://www.facebook.com/help/167551763306531#How-do-I-verify-my-developer-account?),
+	then register an app at https://developers.facebook.com/apps/
+	in the app, click "Add Platform", choose "Web", type a URL (arggggh) to lock the oauth to that URL. However, you *can* set this to localhost.
+	"""
+	auth_url = 'https://www.facebook.com/dialog/oauth'
+	token_url = 'https://graph.facebook.com/oauth/access_token'
+	
+	@staticmethod
+	def whoami(session):
+		"""
+		id: numeric account ID (note! IDs are *app scoped*)
+		name: freeform real-name
+		
+		App-Scoping: <https://developers.facebook.com/docs/graph-api/reference/user/>: " This ID is unique to each app and cannot be used across different apps."
+		  i.e. the ID this gives is *not* the ID you use in https://facebook.com/profile.php?id=<....>
+		 to prevent apps (easily) colluding and tracking users.
+		 you can ask for field "link" but it just gives like https://www.facebook.com/app_scoped_user_id/297049897162674.
+	         now, that link does in fact send you to the right place but requires being logged in with a personal account, which is a bitch and probably against the ToS.
+		 (however, it doesn't require being logged in under any particular account: any FB account can follow that link and  get the username, *and* the original ID...which means it's a security hole that they'll probably notice and close within the year)
+		"""
+		profile = session.get("https://graph.facebook.com/v2.5/me").json()
+		return User("facebook", profile['id'], name=profile['name'])
+		#return {k: v for k,v in profile.items() if k in ['id', 'name']}
+
+# Make a big lookup table of all available providers
+# Now, the architectually nice way to do this would be with an event listener:
+# on creation of each provider subclass, record it automatically
+# But to do that means remembering how metaclasses work.
+# This is almost as fast, and simpler for me to write.
+PROVIDERS = {cls.__name__.lower(): cls for cls in (e for e in locals().values() if isinstance(e,type)) if issubclass(cls, Provider)}
+del PROVIDERS['provider'] #remove cruft
+
 
 
 def load_credentials(fname="credentials.yml"):
-	" merge on-disk app credentials into global PROVIDERS "
+	"merge on-disk app credentials into global PROVIDERS"
 	credentials = yaml.load(open(fname))
 	
 	for provider in list(PROVIDERS.keys()): #listification is because we're editing the dict as we loop over it so we need to protect
@@ -134,12 +247,10 @@ def load_credentials(fname="credentials.yml"):
 			#app.logger.warn("Missing '%s' app credentials." % (provider,))
 			del PROVIDERS[provider]
 		else:
-			PROVIDERS[provider]['app_id'] = credentials[provider]['id']
-			PROVIDERS[provider]['app_secret'] = credentials[provider]['secret']
+			PROVIDERS[provider].app_id = credentials[provider]['id']
+			PROVIDERS[provider].app_secret = credentials[provider]['secret']
 	app.logger.info("Available authorization providers:\n%s", "\n".join("* " + e for e in sorted(PROVIDERS.keys())))
 
-if __name__ == '__main__':
-	load_credentials()
 	
 
 
@@ -176,12 +287,10 @@ def urlstrip(url):
 
 
 def logged_in(u):
-	session['userid'] = u
+	session['userid'] = u.urn
 	app.logger.info("%s logged in.", u)
 	return redirect("/")
 
-import logging
-logging.basicConfig(level=logging.DEBUG) # turn up logging so we can see inside requests_oauthlib
 
 
 @app.route("/oauth2/<provider>")
@@ -195,12 +304,11 @@ def oauth2(provider):
 	to us *at the same endpoint* (which is unusual: most OAuth flows have separate endpoints, one for the initial click, one for the callback, and one for the finishing step)
 	
 	"""
-	if provider not in PROVIDERS:
+	try:
+		provider = PROVIDERS[provider]
+	except KeyError:
 		return "Unsupported OAuth provider.", 404
 	
-	class p: pass;
-	p = p()
-	p.__dict__.update(PROVIDERS[provider]) #import token_url, app_id, etc into the local namespace
 	
 	# An OAuth "app" is an account stored at provider which consists of
 	#  at least (name, app_id, app_secret, callback)
@@ -213,7 +321,7 @@ def oauth2(provider):
 	# so we set redirect_uri to request.url (e.g. https://localhost:5000/oauth2/facebook)
 	# but we need it normalized because during the callback we get something like https://localhost:5000/oauth2/facebook?code=AQABl4ziZe9QsS1ZmT9QS1K5gZFV88M7YD5F0jGHcfuFKxFAF1QvqamERgXYSyHfYSFwnyrcyvmx1lQnJPMucUVI0VDr4OQIbHDafsnGKed65A6OLWbgH5SxQIu--IWC14bDvUMeIP5QcXgHKa5RTG755YqDGBDSn9fUxI_RioLrwzLyMiSad1E2ygK4Slofh6P0gcKZ4GDvAnaQHLFrBDhtZ7o-w-Wgv2VWkdjvsrrS75uFfa0-Ms_Cbg8-tLXJO7FGvfMJRZ1fJZo6x5_l0C3SvVIdNthwEf4T_Z0Ya7bg4dK9MHnHkTijhiETIHBvebwTRFm3FTgMB1R5BBqk8fax&state=64z2IR2IYZJ1l96DckFgmnNbnJcVjQ
 	# which is technically wrong, certainly wasteful, and actively pisses off at least Facebook who says "this URL doesn't match!" and fails the fetch_token()
-	S = OAuth2Session(p.app_id,
+	S = OAuth2Session(provider.app_id,
 	                  redirect_uri=urlstrip(request.url))
 	
 	
@@ -225,7 +333,7 @@ def oauth2(provider):
 	# We figure out if we're the initial click or a callback
 	if request.args.get("code") is None:
 		# Initial click
-		url, session['oauth_state'] = S.authorization_url(p.auth_url)
+		url, session['oauth_state'] = S.authorization_url(provider.auth_url)
 		app.logger.info("auth url = %s", url)
 		#input("press enter to continue")
 		return redirect(url)
@@ -237,15 +345,13 @@ def oauth2(provider):
 		# this protects against CSRF by .....
 		# (the actual check is buried in oauthlib.oauth2.rfc6749.parameters.parse_authorization_code_response())
 		
-		token = S.fetch_token(p.token_url, authorization_response=request.url, client_secret=p.app_secret)
+		token = S.fetch_token(provider.token_url, authorization_response=request.url, client_secret=provider.app_secret)
 		
-		user = p.whoami(S) #call the user-id extracting callback
-		userid = user['id']
-		userid = "%(provider)s:%(userid)s" % locals() # tag the userid with the site it came from, as a URN
+		user = provider.whoami(S) #call the user-id extracting callback
 		
 		# call the logged-in callback
 		# this needs to be like Flask-Login login(), except it has to also tolerate creating accounts
-		return logged_in(userid)
+		return logged_in(user)
 
 
 @app.route('/')
@@ -265,6 +371,8 @@ if __name__ == '__main__':
 	app.debug = True
 	app.secret_key = "butts"
 	
+	load_credentials()
+
 	import ssl
 	t = ssl.SSLContext(ssl.PROTOCOL_TLSv1_2)
 	t.load_default_certs() # OAuth2 specs that you MUST use TLS, because for simplicity it doesn't do any crypto itself. This is probably a good idea, but it does make testing tricky.
