@@ -117,11 +117,11 @@ class User(object):
 		return json.dumps(self.__dict__)
 	
 	
-	def __init__(self, provider, id, login=None, name=None, avatar=None):
+	def __init__(self, provider, userid, login=None, display_name=None, avatar=None):
 		self.provider = provider
-		self._id = id
+		self.userid = userid
 		self.login = login
-		self.display_name = name
+		self.display_name = display_name
 		self.avatar = avatar
 	
 	@property
@@ -130,7 +130,7 @@ class User(object):
 		Return a globally unique ID string for this user.
 		This is what should be used as a primary key in a database
 		"""
-		return "%s:%s" % (self.provider, self._id)
+		return "%s:%s" % (self.provider, self.userid)
 
 
 class Provider(object):
@@ -328,10 +328,15 @@ def urlstrip(url):
 
 @app.before_request
 def load_user():
+	
 	global current_user
 	current_user = None
-	if 'user' in session:
-		current_user = User.loadJSON(session['user'])
+	try:
+		if 'user' in session:
+			current_user = User.loadJSON(session['user'])
+	except Exception as exc:
+		app.logger.warn(exc)
+		pass
 
 def login_user(user):
 	"log user in. This is a mock for Flask-Login's login()"
@@ -401,7 +406,7 @@ def oauth2(provider):
 		user = provider.whoami(S) #call the user-id extracting callback
 		
 		# TODO: provide a hook so that on login
-		login(user)
+		login_user(user)
 		
 		return redirect("/")
 
@@ -413,7 +418,7 @@ def user(userid):
 
 @app.route('/')
 def index():
-	return render_template("index.html", **locals())
+	return render_template("index.html", current_user=current_user)
 
 @app.route('/logout', methods=["POST"])
 def logout():
@@ -428,7 +433,11 @@ def logout():
 @app.route("/login/<provider>")
 def login(provider=None):
 	# TODO: put the rendering *into* each provider? so we just say /login/<provider>, find the provider, and do their code?
-	return render_template("login.html", providers=[PROVIDERS[p] for p in sorted(PROVIDERS)])
+	if provider is None:
+		return render_template("login.html", providers=[PROVIDERS[p] for p in sorted(PROVIDERS)])
+	else:
+		# XXX hardcoded to Oauth2! this is wrong!
+		return redirect(url_for("oauth2", provider=provider))
 
 
 if __name__ == '__main__':
