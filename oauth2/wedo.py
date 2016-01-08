@@ -36,6 +36,7 @@ This is meant to outdo http://psa.matiasaguirre.net/, which is ridiculously over
 
 [x] Write providers as classes instead of a dict
 [x] Extract user details to a useful user object
+ [x] avatars too
 [ ] Make templates which render a login selector that jumps you to the correct login flow
  - use https://github.com/lipis/bootstrap-social/; it's pure-CSS so I can render it without javascript hacks
   [ ] OAuth1
@@ -45,6 +46,8 @@ This is meant to outdo http://psa.matiasaguirre.net/, which is ridiculously over
   [ ] User/password auth (?)
 [ ] Support scopes (---do I want to do this? really? if the goal is social sign in then I should never need any but the default scope)
 [ ] Auto-load compliance fixes
+[ ] Save avatars server-side and serve them from there (to avoid creating a tracker inadvertantly)
+  -- Make sure to think through the privacy implications for subscribers.  If you copy their avatar they lose control of it!
 [ ] Support other web frameworks besides Flask
 [ ] Support non-web ??
 [ ] Cheat: translate Facebook app-scoped UIDs to global UIDs
@@ -195,7 +198,7 @@ class Github(OAuth2Provider):
 		"""
 		profile = session.get("https://api.github.com/user").json()
 		logging.debug("Received this profile from github:\n--------------\n%s\n--------------", pformat(profile))
-		return User("github", profile['id'], profile['login'], profile['name'])
+		return User("github", profile['id'], profile['login'], profile['name'], profile['avatar_url'])
 		#return {k: v for k,v in profile.items() if k in ['id', 'name', 'login']}
 
 
@@ -224,8 +227,12 @@ class Facebook(OAuth2Provider):
 	         now, that link does in fact send you to the right place but requires being logged in with a personal account, which is a bitch and probably against the ToS.
 		 (however, it doesn't require being logged in under any particular account: any FB account can follow that link and  get the username, *and* the original ID...which means it's a security hole that they'll probably notice and close within the year)
 		"""
-		profile = session.get("https://graph.facebook.com/v2.5/me").json()
-		return User("facebook", profile['id'], name=profile['name'])
+		profile = session.get("https://graph.facebook.com/v2.5/me?fields=id,name,picture{url}").json()
+		username = None # <-- this can't be recovered from /me
+		# NB: by using /me/picture it might be possible to get a larger image:
+		#   https://developers.facebook.com/docs/graph-api/reference/user/picture/
+		#   however so far everything i've tried has redirected me back to the 50x50 one, so I'll just live with that
+		return User("facebook", profile['id'], username, profile['name'], profile['picture']['data']['url']) #why picture.data.url? why not, says Facebook.
 		#return {k: v for k,v in profile.items() if k in ['id', 'name']}
 
 # Make a big lookup table of all available providers
@@ -288,9 +295,20 @@ def urlstrip(url):
 	return urlunparse((scheme, netloc, path, "", "", ""))
 
 
+#HACK: for prototyping, instead of pulling in Flask-Login, I just use a global as a shitty replacement
+# using Flask-Login makes current_user thread (i.e. per request) local, even though it's a global, via proxy magic
+current_user = None
+@app.before_request
+def kill_user():
+	global current_user
+	#current_user = None
+
+
 def logged_in(u):
 	session['userid'] = u.urn
-	app.logger.info("%s logged in.", u)
+	global current_user
+	current_user = u
+	app.logger.info("%s logged in. We know %s", u, pformat(u.__dict__))
 	return redirect("/")
 
 
@@ -358,8 +376,14 @@ def oauth2(provider):
 
 @app.route('/')
 def index():
+	
+	
+	
 	if 'userid' in session:
-		return "Hello %s.  <form action='%s' method='POST'><button>Logout</button></form>" % (session['userid'], url_for("logout"))
+		args = dict(current_user.__dict__) #copy
+		args['urn'] = current_user.urn #this wasn't in the copy because it's a property. oh dear. leaky abstraction!
+		return "Hello %(name)s. <img alt='%(name)s' src='%(avatar)s' />. Your ID to me is %(urn)s and your username over there is %(login)s." % args   +\
+		       " <form action='%s' method='POST'><button>Logout</button></form>" % (url_for("logout"),)
 	else:
 		return "Try <a href='%s'>logging in</a>." % (url_for("oauth2", provider="github"))
 
