@@ -67,3 +67,22 @@ will be activated and listed on the WebUI.
 
 In theory, then you need to integrate the auth handler with the rest of your (web) app.
 For now, just make sure you have python-Flask installed and do `./wedo.py`
+
+
+Issues
+------
+
+OAuth and OpenID are vulnerable to phishing attacks, as <a href="http://identity.mozilla.com/post/7669886219/how-browserid-differs-from-openid">mozilla persona</a> points out;
+namely: if you train people to type in their Facebook password after clicking a link from any random site, you train them to give it out without looking, from any random site.
+Hm.
+
+Persona sounds like a good idea, but it's dead in the water.
+It promised separating the identity providers from what's being identified (the idea was it would get rolled into the browser as a part of the core javascript API)
+but as far as I can tell, you still get lumped back to
+Ugh
+Why can't we just have this:
+ an identity provider publishes a PGP key, and for each user it hosts signs the string "provider.com:username" with it
+ when a user wants to authenticate somewhere, they present the signed token
+ the server downloads the identity provider's public key (http://provider.com/auth/key.pem or something) (posssssibly with caching, tho caching has security implications)
+ and checks the signature ..and then knows that provider.com vouches for username
+ ???
