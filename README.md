@@ -78,10 +78,82 @@ Repeat Authentication
 The goal is to avoid making the reader deal with auth as much as possible (if I make my friends sign in to read my blog none of them will read my blog)
 So repeat auth is entirely via the 
 
- idea one: embed session cookies in URLs
+ idea one: embed auth tokens (or session cookies) in URLs
  idea two: somehow have a landing page which puts session cookies 
 
-but maybe we could allow people to reassert their auths
+
+idea one is stateless, and matches exactly how 100 works
+idea two
+
+
+Static Generator Requirements
+-----------------------------
+
+- I need metadata: particularly date: so that the index and RSS pages behave themselves, and perms: to contain the ACL
+  -  [Jekyll's Approach To Metadata Is The Winner](http://jekyllrb.com/docs/frontmatter/)
+- Set up git on commits to rerun the static generator
+  - the static generator needs to extract metadata
+    (apparently Jekyll *already does this*!)
+
+
+- ACL METHOD ONE:  a StaticACL server, which enforces ACLs
+    login can be handled by your choice of Flask-Social, Flask-LoginLess, Flask-Security, etc, whatever you feel is appropriate
+    the simplest thing to do is probably to have the static generator extract the perms: string from fname.md to a file named .fname.acl
+- ACL METHOD TWO:  at generation time, lock the real files away under _content/ (and if you can, set the perms so this cannot be read by the webserver)
+   for each file:
+     compute the set of users with access to a file and generate a custom address for them that contains their auth token via symlink:
+      ln -s _content/post/cooking-badgers.html <token1>/post/cooking-badgets.html
+      ln -s _content/post/cooking-badgers.html <token2>/post/cooking-badgets.html
+      ln -s _content/post/cooking-badgers.html <token3>/post/cooking-badgets.html
+     special case: if 'public', just symlink 
+      ln -s _content/post/cooking-badgers.html /post/cooking-badgets.html
+     ( or maybe ??
+      ln -s _content/post/cooking-badgers.html /public/post/cooking-badgets.html )
+   For each user:
+     Compute the set of files they can see (`find /public -iname "*.html"; find /<token1>/ -iname "*.html"`)
+     and generate index pages and RSS feeds from this
+
+ Method one is simpler for me to implement, but it means moving parts: the StaticACL server still has to open/close .acl files and parse session cookies
+   However it's a lot *less* moving parts than Wordpress.
+ Method two means you can have a fully-static site (i.e. the only moving part is apache/nginx)
+ and it also means it's really really easy to share links accidentally: if someone thinks your post is interesting and they link someone, that someone else now has the auth token (or something just as good)
+   we can data-mine the logfiles to look for people doing this, but it's unreasonable to expect people not to share post links. so I *can't* do this.
+  Mitigations:
+    - stick a moving-parts server with Flask-Login in front. It can be super short: all it should do is rewrite /<path:path> -> either /public/<path> or /{{current_user.get_auth_token()}}/<path> or 404
+      - this is like something mod_rewrite would do: change the path without changing the URL. But I don't think mod_rewrite knows how to look at session cookies.
+    - wrap the whole thing in an iframe?? when you go to /<token>/<path> you get redirected to /path/ with has <iframe src="/_<token>/<path>">
+ hmm
+ So the KISS principle here is leaning against Method Two. Initially, it seems like a good idea: make the whole site static and your done. but doing that securely is ..hard. because...TOCTOU?
+  but if I invest all the effort to write that code and generate those gazillion files and then I *still* need a webapp server, what's the point?
+  
+- (it would be nice if my work is reusable for non-static sites too; which is why Flask-ACL is written like it is..)
+
+- I need a web editor (this part is *not* static):
+  - trigger a git commit on edits
+  - let you look back through the git history of a file
+  PlainTextEditor:
+   - just edit the raw file in a <textarea>
+  MarkdownPostEditor:
+    - use a fancy Markdown editor (if javascript is available)
+      and metadata widgets like datetime and title(?), and the
+      editor should understand metadata how to translate HTML5 widgets <-> YAML metadata.
+    - supports attachments ---- getting this smooth is a hard UX problem, because you should be able to drop an image in and then preview the post and *see* the image, which might happen before the image is actually up on the server, so...?)
+- To protect the web editor itself, either:
+  - attack Flask-Login in front of it (@login_required)
+  - simply generate an auth token for yourself and mv editor.html /editor_<token>.html. So then there's no login system needed, you just keep your token private.
+     you could even set it up to PGP-email you a new token regularly
+  or you can skip the editor entirely and just edit by ssh'ing in (or better: git clone + edit + git push)
+  (but I would li
+- Adding comments:
+  - Add a mini version of the web editor (which is one-way only), that uses the same mechanism of retriggeringyou could trigger a rebuild
+ These exist...somewhere
+ The web editor is *not* part of the static site (so the static site should be a module, which Flask wants me to call a Blueprint)
+  simplest way to deploy
+
+
+Options:
+* Jekyll (the most popular) (in ruby)
+* https://github.com/andrejewski/reem (in javascript)
 
 
 scraps
@@ -111,6 +183,12 @@ my third idea is to look at the referrer header: in order to access /<x> you MUS
 
 the problem with a cookie it only auths
 
+
+
+USEFUL TIP:
+ http://flask.pocoo.org/docs/0.10/patterns/appdispatch/
+  you can write your app assuming it is single-user only (much simpler!)
+  and then use WSGI middleware to generate and route to an app instance per user
 
 
 
@@ -175,7 +253,40 @@ Feed Generators
 
 
 
+Webmentions
+-----------
 
+The webmention spec is a stripped down version of trackbacks.
+trackbacks/pingbacks needed an XMLRPC endpoint to handle stuff, which sort of implied a running database and a bunch of boilerplate.
+
+Webmentions are more RESTful
+The `protocol http://indiewebcamp.com/webmention-spec` is:
+0. there are two URLs: sender and receiver. sender has 'mentioned' (think "commented on" or "reblogged" -- note: requires each comment to have a permalink of its own, which is not that unusual these days, but by no means universal or easy) receiver and wants to notify him.
+1. Discovery: sender GETs https://receiver-site/postname and scans the HTML for <link rel="webmention">. If found, the href is taken as the "webmention endpoint".
+2. Notification: sender POSTs http://receiver-site/webmention_listener {sender=<sender>, receiver=<receiver>}
+3. Verification: receiver (asynchronously) GETs <sender> and scans the HTML for <receiver>.
+4. (optional) receiver extracts microformats from the
+
+This system lets anyone make the server hit any URL, simply by telling it lots of false URLs have mentioned one of its posts, which is a bandwidth amplification vuln.
+
+This protocol is simpler on the wire, but it still uses endpoints and it still requires coordination.
+If the protocol was *fully* RESTful then it would use the source and target URLs direct
+I have a better design:
+ Replace 1 and 2 with GET and Referrers:
+   the webmention endpoint is *always* the receiver itself
+   and notification is sender GETs receiver with `Referrer: sender` 
+- This is 100% compatible with all existing systems: you don't need to put up weird POST handlers, and there's no need for discovery because if the receiver doesn't do webmentions it'll just ignore it as if it was any other browser request
+- this requires some middleware, or mod_webmention, or something. but that's not unreasonable. the backend server can be entirely static.
+ if receiver knows about webmentions, it can at that point spawn a subprocess to check the incoming link for mentions
+   and instead of thinking of it as verification, make step 4 non-optional and instead think of the reverse GET as *finding the content*: you don't count it as a webmention unless you discover the mention microformat on the reverse link with a link to you.
+ now, using Referrer means that every visitor who follows the link outwards will trigger you to poll again. for example, everyone incoming visitor will make you GET the google search they just came from
+   so maybe instead of Referrer, use an X-Webmention: header. That won't be triggered accidentally, still doesn't require
+
+the DDoS prevention issues are identical to those email has had to deal with, though the risk is smaller because nothing gets automatically posted if the attacker gets through
+Idea: can the mention be signed? to further reduce DDoS surface?
+if you run sender.com how can receiver.com know the mention came from you?
+ idea one: just check IP addresses: is the incoming address the same as the server claimed in X-Webmention: (similar to SPF; actually SPF is more restrictive: you have to manually specify in a txt record which servers are which; hmmm. but DNS has multiple)
+ idea two: stick a public signature key into DNS and sign the webmention with it (similar to DKIM)
 
 
 References
