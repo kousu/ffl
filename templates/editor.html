@@ -23,6 +23,10 @@
 <script>
 
 $(document).ready(function() {
+   // If we hava Javascript, enable EpicEditor instead of the plain textarea
+   $("#post_content").css("display", "none");
+   $("#epiceditor").css("display", "");
+
   var editor = new EpicEditor({basePath: '/static/epiceditor',
                           // TODO: figure out how to nicely integrate localstorage.
                           //  right now it's a nuisance because every load uses the same "filename": "epiceditor". this has the janky side effect that the last post you were editing (and even posted!) will show up when you make a new post
@@ -39,20 +43,21 @@ $(document).ready(function() {
 
   //Note: intentionally global
 
-  // on submit, sync the EpicEditor with the original <textarea>
+  // on (i.e. just before) submit, sync the EpicEditor with the original <textarea>
   // It would be better if EpicEditor's editable area *was* the textarea, but beggar's can't be choosers
   // (actually they can: markitup and bootstrap-markdown both do this)
   $("#editor_form").submit(function() {
     $("#post_content").val(editor.exportFile());
   });
-});
 
+});
 </script>
 
 
 <form id="editor_form" style="height: 100%" method="post" enctype="multipart/form-data">
-<textarea id="post_content" name="post_content" style="display: none">{{post_content}}</textarea>
-<div id="epiceditor" style="width: 100%; height: 80%"></div>
+<noscript>
+<textarea id="post_content" name="post_content" style="width: 100%; height: 80%">{{post_content}}</textarea>
+<div id="epiceditor" style="width: 100%; height: 80%; display: none"></div>
 <input type=text placeholder="Aspects" id="post_acl" name="post_acl" value="{{post_acl}}" />
 
 <!-- opera is the only browser with a fully working. everyone else needs to use some custom hack
@@ -64,9 +69,9 @@ $(document).ready(function() {
    https://jonstipe.github.io/datetime-polyfill/demo.html
    and it's unmaintained, a little bit ugly, but probably salvageable
   otherwise, I'll have to manually use Modernizr and a datetime widget
-   http://xdsoft.net/jqplugins/datetimepicker/ looks nice. too bad it's not a polyfill.
+   http://xdsoft.net/jqplugins/datetimepicker/ looks nice. it has date, time, and datetime widgets. too bad it's not a polyfill.
 
- TODO: use datetime-local instead?
+ TODO: use datetime-local instead
 -->
 
 <input type="date" id="post_date" name="post_date" placeholder="yyyy-mm-dd" value="{{post_date if post_date else "1969-01-01"}}" />

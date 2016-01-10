@@ -7,11 +7,18 @@
 {% endblock %}
 
 {% block content %}
-  <h1>{{ title }}</h1>
   <div id='post'>
-    {{ content }}
+    {{ post.content.render()|safe }}
+    {% if post.author %}<div style="opacity: 50%">By: {{ post.author }}</div>{% endif %}
+    <div style="opacity: 50%">Published: {{ post.date.ctime() }}</div>
+    {% if post.updated %}<div style="opacity: 50%">Updated: {{ post.updated.ctime() }}</div>{% endif %}
   </div>
+  
+  {% if comments %}
   <div id='comments'>
-  <!-- comments go here ... -->
+    {% for comment in comments %}
+      {{ comment|tojson }}
+    {% endfor %}
   </div>
+  {% endif %}
 {% endblock %}

@@ -19,7 +19,7 @@
     <script type="text/javascript" src="{{url_for("static", filename="js/modernizr-custom.js")}}"></script>
 
 
-    <title>{{ blogtitle }} - {{ title }}</title>
+    <title>{{ blogtitle }}{{% if title %} - {{ title }}{% endif %}</title>
     {% endblock %}
   </head>
   <body>
