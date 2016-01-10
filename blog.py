@@ -67,7 +67,7 @@ import markdown, bleach
 
 import os, time
 import json
-import datetime
+import datetime, dateutil.parser # such laze
 
 from functools import *
 
@@ -153,92 +153,84 @@ def index():
 #  or any will pass if user is in the allowed set, but again these sets are small comparitively?
 # TODO: cache. but be careful not to introduce TOCTOUs!!
 
-# so: an awkwardness about using sets is that they're immutable, which means that the sets they cover get fixed at @acl.{allow,deny} time, instead of at runtime
-# fixes: use lists instead
-#        use collections.MutableSet
-#        use thunks
-# another awkwardness about sets is they can't be parameterized on the view's arguments
 
 
-def load_post_acls(path):
-	" load the ACLs for view "
-	" this is soooooooooooooooooooooo kludgy "
-	
-	path = strip_traversals(path)
-	
-	app.logger.debug("Loading ACLs for %s", path)
-	
-	# TODO: cache (but not memoize) this for speed
-	# TODO: switch to yaml instead of json. it's more human-readable.
-	#  also make sure to invalidate the cache whenever path's ACLs are updated
+from collections import namedtuple	
+
+def interpret_ACL(perms):
+	" load the ACLs : translate a string like 'friends -family -mailto:sally@gmail.net' into an actual set "
 	
 	allows, denies = set(), set() # <-- default deny
-	try:
-		perms = json.load(open("_posts/"+path+".acl"))
-		
-		app.logger.debug("perms = %s", perms)
-		if perms == "public":
-			allows = public_set
-		elif perms == "private":
-			pass
-		else:
-			app.logger.debug("loading perms from file")
-			
-			def to_set(e):
-				if e in UserDB: return {e}
-				elif e in Groups: return Groups[e]
-				else:
-					app.logger.warn("Unknown user %s", e)
-					return {e} #DEBUG : accept unknown users off disk
-					#return set()
-
-			for rule in perms:
-				type, principle = rule[0], rule[1:]
-				principle = to_set(principle)
-				if type == "+":
-					allows.update(principle)
-				elif type == "-":
-					denies.update(principle)
-				else:
-					app.logger.warn("Invalid ACL rule %s on %s", rule, path)
-	except Exception as exc:
-		app.logger.info("Failed to load ACLs for %s. Defaulting to private.", path)
-		app.logger.debug("%s", exc)
-		#raise
+	app.logger.debug("perms = %s", perms)
+	if perms == "public":
+		allows = public_set
+	elif perms == "private":
 		pass
+	else:
+		if isinstance(perms, str):
+			perms = perms.split()
+		
+		def to_set(e):
+			if e in UserDB: return {e}
+			elif e in Groups: return Groups[e]
+			else:
+				app.logger.warn("Unknown user %s", e)
+				return {e} #DEBUG : accept unknown users off disk
+				#return set()
+		
+		allows = {to_set(rule[1:]) for rule in perms if rule[0] != "-"}
+		denies = {to_set(rule[1:]) for rule in perms if rule[0] == "-"}
 	
-	return allows, denies
+	
+	return namedtuple("",["allowed","denied"])(allows, denies}
+
 
 @app.before_request
 def share_acl():
 	g.acl = acl
+
+
+def flask_memoized(f):
+	"""
+	Memoize a function using the Flask `g` magic global
+	this means that rather than it effectively gets wiped on each request
+	This object exists precisely because because with all the lambdas and decorators flying around flask, it's hard to share values between difference components
+	so this function lets you write code which has a consistent value for the duration of a request, but then flips back to something else on the next request
+	"""
+	@wraps(f)
+	def dec(*args, **kwargs):
+		if not hasattr(g,f.__qualname__):
+			setattr(g,f.__qualname__,{}) #create the memoization space; this is inside the decorator because it has to be redone on each request
+		
+		memos = getattr(g,f.__qualname__)
+		
+		k = (args, tuple(sorted(kwargs.items())))
+		if k not in memos:
+			memos[k] = f(*args, **kwargs)
+		return memos[k]
+
+	return dec
+
+memoized_load_post = flask_memoized(Post.load)
+memoized_interpret_ACL = flask_memoized(interpret_ACL)
 
 # TODO:
 #  the idea is that some pages (/index, /manage) will have fixed permissions coded at the app level
 #  but for everything under /post, we delegate to the external, user-controlled, database
 @app.route("/post/<path:post>")
 @acl.allow(admins)
-@acl.allow(lambda user, post: user.get_id() in load_post_acls(post)[0])
-@acl.deny (lambda user, post: user.get_id() in load_post_acls(post)[1])
+@acl.allow(lambda user, post: user.get_id() in memoized_interpret_ACL(memoized_load_post(post).ACL).allowed) #OMG we're loading the post THREE TIMES per request. frig. What do? memoizing is the obvious answer, but how do I memoize a constructor??
+@acl.deny (lambda user, post: user.get_id() in memoized_interpret_ACL(memoized_load_post(post).ACL).denied)
 def view_post(post):
-	path = strip_traversals(post)
+	post = strip_traversals(post)
 	
-	if os.path.exists(os.path.join("_posts", post + ".html")):
-		content = open(os.path.join("_posts", post + ".html")).read()
-	elif os.path.exists(os.path.join("_posts", post + ".md")):
-		# note: there is a Flask-Markdown extension, which gives a filter you can use in templates (like `{{ content | markdown }}` but this is dumb)
-		content = open(os.path.join("_posts", post + ".md")).read()
-		content = markdown.Markdown(extensions=['markdown.extensions.fenced_code']).convert(content) #TODO: cache the Markdown instance
-		content = bleach.clean(content, bleach.ALLOWED_TAGS+["h1","h2","h3","pre","p"]) # sanitize untrusted input!
-		# hmmm. this is.
-	else:
-		# doesn't exist!
-		return abort(404)
+	try:
+		post = Post.load(post)
+	except FileNotFoundError as exc:
+		return str(exc), 404
 	
-	content = Markup(content) #mark the content as 'safe' so that the templating engine doesn't mangle the HTML.
-	return render_template('post.html', blogtitle=BLOGTITLE, title="",
-		content=content,
-		comments=[])
+	return render_template('post.html', post=post,
+				comments=[{"author":"sally","text":"go eat Dumbo"}, "empty flasks", 4324])
 
 
 # things I could do:
@@ -250,7 +242,7 @@ def view_post(post):
 @acl.allow(admins)
 @acl.allow(family)
 def view_post_family():
-	return render_template('post.html', blogtitle=BLOGTITLE, title="Family-Accessible Post")
+	return render_template('post.html', title="Family-Accessible Post")
 
 # in flask, an "endpoint" is a unique string + function
 # usually the unique string is function.__name__, but this can (argh) be overridden
@@ -327,17 +319,37 @@ def subscribe():
 # just tested: Liferea, at least, properly handles following the auth links and getting logged in
 # so installing LoginLess and handing out https://blog.me/auth/<key>?next=/rss.xml as the login links is *precisely*
 
-def extract_title(md):
-	title = [l.strip()[2:] for l in md.split("\n") if l.strip().startswith("# ")]
-	if title:
-		return title[0]
-	return invent_title() #XXX this should 
-
-
 WORDS = [w.strip() for w in open("/usr/share/dict/words")]
-def invent_title():
+def invent_slug():
 	" make up a title on the fly, so that untitled posts (i.e. a tumbleblog) can happen "
 	return "-".join(random.choice(WORDS) for i in range(random.randint(5,16)))
+
+def html5_to_datetime(date, time):
+	"given two isoformat strings, recover"
+	# ???
+	return dateutil.parser.parse(date+"T"+time)
+
+def datetime_to_html5(D):
+	return D.date().isoformat(), D.time().isoformat()
+
+
+from io import StringIO
+from itertools import tee
+
+
+		
+
+def load_post(post):
+	with open("_posts/" + post + ".md") as f:
+		content = f.read()
+	with open("_posts/" + post + ".date") as f:
+		published = dateutil.parser.parse(f.read())
+	with open("_posts/" + post + ".acl") as f:
+		perms = " ".join(json.loads(f.read()))
+
+	return content, published, perms
+
+
 
 @app.route("/edit/", methods=["GET","POST"])
 @app.route("/edit/<path:post>", methods=["GET","POST"])
@@ -356,10 +368,13 @@ def editor(post=""):
 		app.logger.debug("Received content for '%s' with ACL '%s'", post, request.form['post_acl'])
 		app.logger.debug("Writing to disk")
 		
-		with open("_posts/" + slug + ".md","w") as md:
-			md.write(request.form['post_content'])
-		with open("_posts/" + slug + ".acl","w") as acl:
-			acl.write(json.dumps(request.form['post_acl'].lower().split()))
+		with open("_posts/" + slug + ".md","w") as f:
+			f.write(request.form['post_content'])
+		with open("_posts/" + slug + ".acl","w") as f:
+			f.write(json.dumps(request.form['post_acl'].lower().split()))
+		with open("_posts/" + slug + ".date","w") as f:
+			published = html5_to_datetime(request.form['post_date'],request.form['post_time'])
+			f.write(published.isoformat())
 		
 		if slug != post: #XXX this isn't truuuuuuuuuuuuuuuuuuuuuuue, because there might not *be* a title (in which case our slug 
 			# a rename happened, so wipe the old file
@@ -369,28 +384,29 @@ def editor(post=""):
 			except: pass
 			try: os.unlink("_posts/" + post + ".acl")
 			except: pass
+			try: os.unlink("_posts/" + post + ".date")
+			except: pass
 		
 		return redirect(url_for("view_post", post=slug))
 	
 	elif request.method == "GET":
-		if os.path.exists("_posts/" + post + ".md"):
-			perms = open("_posts/" + post + ".acl").read()
-			perms = " ".join(json.loads(perms))
-			
-			content = open("_posts/" + post + ".md").read()
-			
-			# read the title out of the markdown
-			# the title is the first <h1> title, as far as we care
-			assert slugify(extract_title(content)) == post, "When loading an existing post, slug from the post content should equal the title in the URL of the page!"
-			live_link = url_for("view_post", post=post);
-			
-			published = datetime.datetime.fromtimestamp(0) # XXX in lieu of reading the date off the filesystem, set the post date to the Unix Epoch
-		else:
+		if not post: # new post!
 			# new post
 			live_link = None
 			content = None
 			perms = "private"
+
 			published = datetime.datetime.now()
+		else:
+			try:
+				content, published, perms = load_post(post)
+				# read the title out of the markdown
+				# the title is the first <h1> title, as far as we care
+				assert slugify(extract_title(content)) == post, "When loading an existing post, slug from the post content should equal the title in the URL of the page!"
+				live_link = url_for("view_post", post=post);
+				
+			except FileNotFoundError as exc:
+				return str(exc), 404
 	
 		# we convert the datetime to isoformat as used by html5
 		# we don't give a timezone (note: timezones only apply) so the timezone is implicitly whatever the *server* thinks
@@ -403,12 +419,13 @@ def editor(post=""):
 		# (the rendering of a time string is finicky in different browsers; not giving it the chance to deal with sub-minute resolution helps)
 		# TODO: this should be a function since we need to also run it on incoming data --- since we can't trust the input!
 		published = published.replace(minute = published.minute//15 * 15, second=0, microsecond=0)
+		post_date, post_time = datetime_to_html5(published)
 		
 		return render_template('editor.html',
 		                       blogtitle=BLOGTITLE,
 		                       title="Editor",
 		                       post_title=post, post_content=content, post_acl=perms, live_link=live_link,
-	        	               post_date=published.date().isoformat(), post_time=published.time().isoformat())
+	        	               post_date=post_date, post_time=post_time)
 
 
 @app.before_request
