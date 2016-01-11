@@ -44,10 +44,17 @@ This is meant to outdo http://psa.matiasaguirre.net/, which is ridiculously over
   [ ] OpenID
   [ ] Email auth
   [ ] User/password auth (?)
+[ ] Glitch:
+ - tumblr (on OAuth1) and google (on OAuth2) both for some reason *always* re-prompt the user
+   but the other sites log you in smoothly
+   if google is always going to reprompt, why does it have {access_type="offline", approval_prompt="force"} as options?
+    -- I think maybe if I pass ?access_type=offline then google will save the thing? maybe? hm.
 [ ] Support scopes (---do I want to do this? really? if the goal is social sign in then I should never need any but the default scope)
 [ ] Auto-load compliance fixes
+  # TODO: [e for e in dir(requests_oauthlib.compliance_fixes) if e.endswith("compliance_fix")]
 [ ] Save avatars server-side and serve them from there (to avoid creating a tracker inadvertantly)
   -- Make sure to think through the privacy implications for subscribers.  If you copy their avatar they lose control of it!
+  -- in fact, Disconnect.me blocks the Twitter avatars specifically because they are also trackers
 [ ] Support other web frameworks besides Flask
 [ ] Support non-web ??
 [ ] Cheat: translate Facebook app-scoped UIDs to global UIDs
@@ -63,6 +70,7 @@ from urllib.parse import *
 import requests
 from requests_oauthlib import *
 from requests_oauthlib.compliance_fixes import facebook_compliance_fix
+
 
 from flask import *
 
@@ -182,6 +190,8 @@ class OAuth1Provider(Provider):
 	request_url = None
 	auth_url = None
 	token_url = None
+	
+	scope = None
 
 	def __init__(self, id, secret):
 		self.app_id = id
@@ -205,7 +215,7 @@ class Twitter(OAuth1Provider):
 	 and doesn't allow you to use the user-level sign in thing ("Sign in with Twitter")
 	 yet, Twitter fully respects *anything* you put in your own callback_url
 	"""
-	#request_url = 'https://api.twitter.com/oauth/request_token'
+	request_url = 'https://api.twitter.com/oauth/request_token'
 	auth_url = 'https://api.twitter.com/oauth/authenticate'
 	token_url = 'https://api.twitter.com/oauth/access_token'
 	
@@ -292,13 +302,43 @@ class OAuth2Provider(Provider):
 	"""
 	auth_url = None
 	token_url = None
+	scope = None
 	
 	def __init__(self, id, secret):
 		self.app_id = id
 		self.app_secret = secret #TODO: check types
 
 
+
+class Google(OAuth2Provider):
+	"""
+	https://developers.google.com/identity/protocols/OAuth2
 	
+	Get keys at https://console.developers.google.com/#identifier
+	Note that Google enforces that callback_url match the registered one, so you must set it right
+	which makes deployment tedious
+	
+	# USEFUL: https://developers.google.com/oauthplayground
+	# also https://developers.google.com/identity/protocols/googlescopes
+	"""
+	auth_url = "https://accounts.google.com/o/oauth2/auth"
+	token_url = "https://accounts.google.com/o/oauth2/token"
+	scope = ["https://www.googleapis.com/auth/userinfo.profile"]
+	
+	name = "Google"
+	icon = "google"
+	
+	@classmethod
+	def whoami(self, session):
+		# TODO: switch to /v3
+		profile = session.get('https://www.googleapis.com/oauth2/v1/userinfo')
+		profile.raise_for_status()
+		profile = profile.json()
+		
+		# 'email' is only in profile if we ask for userinfo.email
+
+		return User(self.icon, profile['id'], None, profile['name'], profile['picture'])
+
 
 #OAuth-dropins decided to use inheritence, not composition: each provider subclasses 
 # prefer composition to inheritence!
@@ -483,6 +523,31 @@ def oauth1(provider):
 		return redirect("/")
 
 
+
+import requests.auth
+class HTTPNullAuth(requests.auth.AuthBase):
+	"""
+	Workaround for a bug in requests-oauthlib 2.9.1 and below.
+	There's this line in OAuth2Session.fetch_token():
+	  >         auth = auth or requests.auth.HTTPBasicAuth(username, password)
+	 most providers ignore the Authorization: header when not asked for it, but Google at least is picky
+	 and will 400 the request with no explanation
+	 Newer requests-oauthlib now says
+	  >       if (not auth) and username:
+	  >          if password is None:
+	  >            raise ValueError('Username was supplied, but not password.')
+	  >          auth = requests.auth.HTTPBasicAuth(username, password)
+	 which is a lot more reasonable.
+	
+	But 'auth or ....' is really annoying to hack around. I can't just set auth=None or auth="" or something.
+	In lieu, This class pretends to be an auth thingy but actually is a no-op
+	"""
+	def __call__(self, response):
+		return response
+HTTPNullAuth=HTTPNullAuth() #it might as well be a singleton
+
+
+
 def oauth2(provider):
 	"""
 	An endpoint which handles client (i.e. application) side OAuth.
@@ -508,7 +573,8 @@ def oauth2(provider):
 	# but we need it normalized because during the callback we get something like https://localhost:5000/oauth2/facebook?code=AQABl4ziZe9QsS1ZmT9QS1K5gZFV88M7YD5F0jGHcfuFKxFAF1QvqamERgXYSyHfYSFwnyrcyvmx1lQnJPMucUVI0VDr4OQIbHDafsnGKed65A6OLWbgH5SxQIu--IWC14bDvUMeIP5QcXgHKa5RTG755YqDGBDSn9fUxI_RioLrwzLyMiSad1E2ygK4Slofh6P0gcKZ4GDvAnaQHLFrBDhtZ7o-w-Wgv2VWkdjvsrrS75uFfa0-Ms_Cbg8-tLXJO7FGvfMJRZ1fJZo6x5_l0C3SvVIdNthwEf4T_Z0Ya7bg4dK9MHnHkTijhiETIHBvebwTRFm3FTgMB1R5BBqk8fax&state=64z2IR2IYZJ1l96DckFgmnNbnJcVjQ
 	# which is technically wrong, certainly wasteful, and actively pisses off at least Facebook who says "this URL doesn't match!" and fails the fetch_token()
 	S = OAuth2Session(provider.app_id,
-	                  redirect_uri=urlstrip(request.url))
+	                  redirect_uri=urlstrip(request.url),
+	                  scope=provider.scope)
 	
 	
 	if provider == 'facebook': #HACK
@@ -517,7 +583,7 @@ def oauth2(provider):
 		S = facebook_compliance_fix(S) #arrrgh
 	
 	# We figure out if we're the initial click or a callback
-	if request.args.get("code") is None:
+	if request.args.get("state") is None:
 		# Initial click
 		# construct the session-specific auth url at the provider to send the user over to
 		auth_url, session['oauth_state'] = S.authorization_url(provider.auth_url)
@@ -530,7 +596,7 @@ def oauth2(provider):
 		# NOTICE: we *don't* reload the state from the query string, instead it's from the session
 		# this protects against CSRF because 
 		# (the actual check is buried in oauthlib.oauth2.rfc6749.parameters.parse_authorization_code_response())
-		token = S.fetch_token(provider.token_url, authorization_response=request.url, client_secret=provider.app_secret)
+		token = S.fetch_token(provider.token_url, authorization_response=request.url, client_secret=provider.app_secret, client_id=provider.app_id, auth=HTTPNullAuth)
 		
 		user = provider.whoami(S) #call the user-id extracting callback
 		

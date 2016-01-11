@@ -1,3 +1,7 @@
+
+import logging
+logging.basicConfig(level=logging.DEBUG)
+
 # from https://requests-oauthlib.readthedocs.org/en/latest/examples/facebook.html
 import yaml
 cred = yaml.load(open("credentials.yml"))["facebook"]
