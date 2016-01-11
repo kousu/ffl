@@ -141,6 +141,11 @@ class Provider(object):
 	icon = None #shortcode used to refer to this provider in URLs and CSS and such
 	 #ah, separate presentation from logic: it might not be possible to use the same code across bootstrap-social and requests-oauthlib and elsewhere...
 
+	@staticmethod
+	def whoami(session):
+		assert isinstance(session, requests.Session)
+		raise NotImplementedError
+
 
 class SMS(Provider):
 	# i.e. SMS
@@ -170,10 +175,67 @@ class Pseudoanon(Provider):
 	icon = "barcode" #"asterisk"?
 
 
+class OAuth1Provider(Provider):
+	"""
+	
+	"""	
+	request_url = None
+	auth_url = None
+	token_url = None
+
+	def __init__(self, id, secret):
+		self.app_id = id
+		self.app_secret = secret #TODO: check types
+	
+
+class Tumblr(OAuth1Provider):
+	"""
+	Register at https://www.tumblr.com/oauth/apps
+	Review https://www.tumblr.com/docs/api_agreement before registering.
+	"""
+	request_url = 'http://www.tumblr.com/oauth/request_token'
+	auth_url = 'http://www.tumblr.com/oauth/authorize'
+	token_url = 'http://www.tumblr.com/oauth/access_token'
+	
+	name = "Tumblr"
+	icon = "tumblr"
+	
+	@staticmethod
+	def whoami(session):
+		# https://www.tumblr.com/docs/en/api/v2#user-methods
+		r = session.get("https://api.tumblr.com/v2/user/info")
+		r.raise_for_status()
+		profile = r.json()['response']['user']
+		# tubmlr accounts don't have avatars, *blogs* do
+		# but each account has a *primary* blog whose avatar could in theory be extracted
+		# also, the user info thing only gives a username, not an id, and I am 99% sure this can be easily changed...
+		# but you work with what you've got
+		# actually, since "identity" on tumblr basically comes down to <x>.tumblr.com and identities are supposed to be easily dumpable
+		
+		# find the avatar of the primary blog (this always exists; tumblr generates one if not set)
+		app.logger.debug("GOT THIS PROFILE FROM TUMBLR:")
+		pprint(profile)
+		blog = [b for b in profile['blogs'] if b['primary']]
+		if len(blog) != 1:
+			raise Exception("Tumblr gave %d primary blogs for %d, but there should only every be 1." % (len(blog),profile['name']))
+		blog = blog[0]
+		
+		# https://www.tumblr.com/docs/en/api/v2#blog-avatar
+		# you can ask for different sizes by appending the pixels with /[pixels], e.g. avatar/512 gets the largest avatar
+		# the default is a smallish
+		avatar = session.get("https://api.tumblr.com/v2/blog/%(blog)s.tumblr.com/avatar" % {"blog": blog['name']})
+
+		
+		# tumblr doesn't give us user ids, so use the login as the userid
+		# (which tbh I'd prefer to do for everyone, but the way that names can be thrown away makes me think twice..)
+		# oh and for the avatar, we don't actually care about having the image data just yet, just the link is enough, so we can use .url:
+		#                           id,           username,    name, avatar
+		return User('tumblr', profile['name'], profile['name'], blog['name'], avatar.url)
+	
+
 class OAuth2Provider(Provider):
 	"""
 	sub-base class for OAuth2 identity providers
-
 	
 	Holds the remote OAuth endpoints in {auth,token}_url,
 	and at init stores the app_{id, secret} strings that you need to get by registering a developer account with the OAuth provider,
@@ -186,6 +248,9 @@ class OAuth2Provider(Provider):
 	This clusterfuck is because OAuth couldn't just spec something like "OAuth is a RESTful protocol and it MUST live at site.com/oauth/". bastards.
 	 each site's URLs have to be researched, and kept up to date,
 	 and further each site has to have custom code for extracting identity information once you've got an auth token.
+	
+	# TODO:
+	# set up auto-token-refresh https://requests-oauthlib.readthedocs.org/en/latest/oauth2_workflow.html#third-recommended-define-automatic-token-refresh-and-update
 	"""
 	auth_url = None
 	token_url = None
@@ -194,10 +259,6 @@ class OAuth2Provider(Provider):
 		self.app_id = id
 		self.app_secret = secret #TODO: check types
 	
-	@staticmethod
-	def whoami(session):
-		assert isinstance(session, requests.Session)
-		raise NotImplementedError
 
 #OAuth-dropins decided to use inheritence, not composition: each provider subclasses 
 # prefer composition to inheritence!
@@ -270,13 +331,13 @@ del PROVIDERS['provider'] #remove cruft
 
 
 
-def load_oauth2_credentials(fname="credentials.yml"):
+def load_oauth_credentials(fname="credentials.yml"):
 	"merge on-disk app credentials into global PROVIDERS"
 	"beware: OAuth2Provider is written assuming you'll instantiate it with app_{id,secret}, but instead this attaches directly to the class; the only method is static, so either way works right now"
 	credentials = yaml.load(open(fname))
 	global PROVIDERS
 	for provider in list(PROVIDERS.keys()): #listification is because we're editing the dict as we loop over it so we need to protect
-		if issubclass(PROVIDERS[provider], OAuth2Provider):
+		if issubclass(PROVIDERS[provider], (OAuth1Provider,OAuth2Provider)):
 			if provider not in credentials or 'id' not in credentials[provider] or 'secret' not in credentials[provider]:
 				#app.logger.warn("Missing '%s' app credentials." % (provider,))
 				del PROVIDERS[provider]
@@ -329,7 +390,7 @@ def urlstrip(url):
 @app.before_request
 def load_user():
 	
-	global current_user
+	global current_user #TOTALLY NOT THREAD (i.e. multi-user) SAFE LOLOLOLOLOLOLOLOLOLOL SECURITY HOLLLLLLE
 	current_user = None
 	try:
 		if 'user' in session:
@@ -349,7 +410,39 @@ def logout_user():
 
 
 
-@app.route("/oauth2/<provider>")
+
+
+def oauth1(provider):
+	"""
+	
+	This code is almost identical to the OAuth2 flow. But it's just different enough making it that it needs to be separate but not so large that it's worth trying to factor.
+	
+	"""
+	
+	# this code adapted from https://requests-oauthlib.readthedocs.org/en/latest/examples/tumblr.html
+	S = OAuth1Session(provider.app_id,
+	                  client_secret=provider.app_secret,
+	       	          callback_uri=urlstrip(request.url)) #note: OAuth2 calls renamed this to "redirect_uri", just to complicate your life.
+	
+	if request.args.get("oauth_token") is None: #<-- FLASK
+		session['oauth_state'] = S.fetch_request_token(provider.request_url)
+		# construct the session-specific auth url at the provider to send the user over to
+		auth_url = S.authorization_url(provider.auth_url)
+		return redirect(auth_url) #<-- FLASK
+	else:
+		# restore the state from the first request
+		S._populate_attributes(session['oauth_state'])
+		del session['oauth_state']
+		
+		S.parse_authorization_response(request.url) #<-- FLASK
+		S.fetch_access_token(provider.token_url)
+		
+		user = provider.whoami(S)
+		login_user(user)
+		
+		return redirect("/")
+
+
 def oauth2(provider):
 	"""
 	An endpoint which handles client (i.e. application) side OAuth.
@@ -360,11 +453,8 @@ def oauth2(provider):
 	to us *at the same endpoint* (which is unusual: most OAuth flows have separate endpoints, one for the initial click, one for the callback, and one for the finishing step)
 	
 	"""
-	try:
-		provider = PROVIDERS[provider]
-	except KeyError:
-		return "Unsupported OAuth provider.", 404
 	
+	# This code adapted from https://requests-oauthlib.readthedocs.org/en/latest/examples/facebook.html
 	
 	# An OAuth "app" is an account stored at provider which consists of
 	#  at least (name, app_id, app_secret, callback)
@@ -389,18 +479,17 @@ def oauth2(provider):
 	# We figure out if we're the initial click or a callback
 	if request.args.get("code") is None:
 		# Initial click
-		url, session['oauth_state'] = S.authorization_url(provider.auth_url)
-		app.logger.info("auth url = %s", url)
-		#input("press enter to continue")
-		return redirect(url)
+		# construct the session-specific auth url at the provider to send the user over to
+		auth_url, session['oauth_state'] = S.authorization_url(provider.auth_url)
+		return redirect(auth_url)
 	else:
 		# Callback! Fetch a token!
 		S._state = session['oauth_state']
+		del session['oauth_state']
 		
 		# NOTICE: we *don't* reload the state from the query string, instead it's from the session
-		# this protects against CSRF by .....
+		# this protects against CSRF because 
 		# (the actual check is buried in oauthlib.oauth2.rfc6749.parameters.parse_authorization_code_response())
-		
 		token = S.fetch_token(provider.token_url, authorization_response=request.url, client_secret=provider.app_secret)
 		
 		user = provider.whoami(S) #call the user-id extracting callback
@@ -436,15 +525,25 @@ def login(provider=None):
 	if provider is None:
 		return render_template("login.html", providers=[PROVIDERS[p] for p in sorted(PROVIDERS)])
 	else:
-		# XXX hardcoded to Oauth2! this is wrong!
-		return redirect(url_for("oauth2", provider=provider))
-
+		try:
+			provider_ = PROVIDERS[provider]
+			assert provider == provider_.__name__.lower(), "Provider key string must match"
+			provider = provider_
+			del provider_
+		except KeyError:
+			return "Unsupported OAuth provider.", 404
+		
+		# XXX sketchy type-switch
+		if issubclass(provider, OAuth1Provider):
+			return oauth1(provider)
+		else:
+			return oauth2(provider)
 
 if __name__ == '__main__':
 	app.debug = True
 	app.secret_key = "butts"
 	
-	load_oauth2_credentials()
+	load_oauth_credentials()
 
 	import ssl
 	t = ssl.SSLContext(ssl.PROTOCOL_TLSv1_2)
