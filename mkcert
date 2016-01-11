@@ -29,7 +29,10 @@
 # SSLCertificateKeyFile domain.key
 # ```
 
-case $1 in
+TARGET=$1
+DAYS=${2:-3}
+
+case $TARGET in
   "")
     echo
     echo "Generating self-signed certificate authority (CA)."
@@ -54,7 +57,7 @@ case $1 in
     openssl genrsa -out "$1".key 4096 &&
     openssl req -new -key "$1".key -out "$1".csr -subj "/CN=$1" &&
     # wtf is CA.srl for? why can we only create it when we're signing a sub-certificate??
-    openssl x509 -req -in "$1".csr -out "$1".crt    -CA CA.crt -CAkey CA.key   -CAcreateserial -days 3  &&
+    openssl x509 -req -in "$1".csr -out "$1".crt    -CA CA.crt -CAkey CA.key   -CAcreateserial -days "$DAYS"  &&
     rm "$1".csr
     ;;
 esac
