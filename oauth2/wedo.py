@@ -186,6 +186,44 @@ class OAuth1Provider(Provider):
 	def __init__(self, id, secret):
 		self.app_id = id
 		self.app_secret = secret #TODO: check types
+
+
+	
+
+class Twitter(OAuth1Provider):
+	"""
+	Overview:  https://dev.twitter.com/web/sign-in/implementing
+	Twitter is OAuth1.0a: https://dev.twitter.com/oauth
+
+	
+	create keys at:
+	https://apps.twitter.com/
+	 when you do this you *must* fill in something for the callback URL
+	 (but it can just be, e.g., "http://facebook.com")
+	because otherwise Twitter implicitly assumes you're making an app-key-only app
+	 (which it sometimes slips up and calls a "desktop app") which only knows how to use app-level API keys
+	 and doesn't allow you to use the user-level sign in thing ("Sign in with Twitter")
+	 yet, Twitter fully respects *anything* you put in your own callback_url
+	"""
+	#request_url = 'https://api.twitter.com/oauth/request_token'
+	auth_url = 'https://api.twitter.com/oauth/authenticate'
+	token_url = 'https://api.twitter.com/oauth/access_token'
+	
+	name = "Twitter"
+	icon = "twitter"
+	
+	@classmethod
+	def whoami(cls, session):
+		# https://dev.twitter.com/rest/reference/get/account/verify_credentials
+		profile = session.get("https://api.twitter.com/1.1/account/verify_credentials.json")
+		profile.raise_for_status()
+		profile = profile.json()
+		
+		id = profile['id']
+		login = profile['screen_name']
+		name = profile['name']
+		avatar = profile['profile_image_url_https']
+		return User(cls.icon, id, login, name, avatar)
 	
 
 class Tumblr(OAuth1Provider):
@@ -258,6 +296,8 @@ class OAuth2Provider(Provider):
 	def __init__(self, id, secret):
 		self.app_id = id
 		self.app_secret = secret #TODO: check types
+
+
 	
 
 #OAuth-dropins decided to use inheritence, not composition: each provider subclasses 
