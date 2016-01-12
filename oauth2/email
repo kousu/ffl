@@ -1,0 +1,33 @@
+# from http://www.mkyong.com/python/how-do-send-email-in-python-via-smtplib/
+import yaml
+cred = yaml.load(open("credentials.yml"))['email']
+
+server = cred['server']
+user = cred['id']
+pwd = cred['secret']
+
+import sys
+import smtplib
+
+
+from_ = sys.argv[1] if len(sys.argv)>1 else 'nick@saxophonekousu.ca'
+to = sys.argv[2] if len(sys.argv)>2 else 'kousue@gmail.com'
+
+starttls = False
+#weird: with my server (comms.kousu.ca) I have to use smtps or else it rejects my auth
+# but gmail works fine 
+if starttls:
+	smtpserver = smtplib.SMTP(server,587)
+	print(smtpserver.ehlo())
+	print(smtpserver.starttls()) #Dont need this becasue we're already SSL'd
+	# Notice: after starttls you must re-hello because your permissions ("smtp Capabilities") can change
+else:
+	smtpserver = smtplib.SMTP_SSL(server)
+print(smtpserver.ehlo())
+print(smtpserver.login(user, pwd))
+header = 'To:' + to + '\n' + 'From: ' + from_ + '\n' + 'Subject:testing \n'
+print(header)
+msg = header + '\n this is test msg from mkyong.com \n\n'
+print(smtpserver.sendmail(from_, to, msg))
+print('done!')
+print(smtpserver.close())
