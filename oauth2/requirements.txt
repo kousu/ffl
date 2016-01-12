@@ -1,0 +1,11 @@
+
+yaml
+oath
+flask
+requests_oauthlib
+
+#for SMS (./xsend)
+nbxmpp
+
+#for Pseudoanon
+# you also need /usr/share/dict/words. on Debian* this is `dict`, on arch this is in several packages depending on language you want: `wamerican` is good enough
