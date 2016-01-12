@@ -1,5 +1,80 @@
-#!/bin/sh
-# 
+#!/usr/bin/python3
+# from https://python-nbxmpp.gajim.org/browser/doc/examples/xsend.py
+# this logs in and sends a single message, waits a second, then quits.
+# based on the xmpppy (fork?) from the Gajim project
 
-HERE=$(dirname $0)
-HOME=$HERE python $HERE/xsend.py "$1" "$2"
+import sys
+import os
+import nbxmpp
+import time
+import logging
+try:
+    from gi.repository import GObject as gobject
+except Exception:
+    import gobject
+
+consoleloghandler = logging.StreamHandler()
+root_log = logging.getLogger('nbxmpp')
+#root_log.setLevel('DEBUG')
+root_log.addHandler(consoleloghandler)
+
+if len(sys.argv) < 2:
+    print("Syntax: xsend JID text")
+    sys.exit(0)
+
+import yaml
+cred = yaml.load(open("credentials.yml"))['sms']
+
+to_jid = sys.argv[1]
+text = ' '.join(sys.argv[2:])
+
+
+
+class Connection:
+    def __init__(self, user, pass_):
+        self.jid = nbxmpp.protocol.JID(user)
+        self.password = pass_
+        self.sm = nbxmpp.Smacks(self) # Stream Management
+        self.client_cert = None
+	
+        idle_queue = nbxmpp.idlequeue.get_idlequeue()
+        self.client = nbxmpp.NonBlockingClient(self.jid.getDomain(), idle_queue, caller=self)
+        self.con = self.client.connect(self.on_connected, self.on_connection_failed, secure_tuple=('tls', '', '', None, None))
+
+
+    def on_auth(self, con, auth):
+        if not auth:
+            print('could not authenticate!')
+            sys.exit()
+        print('authenticated using ' + auth)
+        self.send_message(to_jid, text)
+
+    def on_connected(self, con, con_type):
+        print('connected with ' + con_type)
+        auth = self.client.auth(self.jid.getNode(), self.password, resource=self.jid.getResource(), sasl=1, on_auth=self.on_auth)
+
+    def get_password(self, cb, mech):
+        cb(self.password)
+
+    def on_connection_failed(self):
+        print('could not connect!')
+
+    def _event_dispatcher(self, realm, event, data):
+        pass
+
+    def send_message(self, to_jid, text):
+        id_ = self.client.send(nbxmpp.protocol.Message(to_jid, text, typ='chat'))
+        print('sent message with id ' + id_)
+        gobject.timeout_add(1000, self.quit)
+
+    def quit(self):
+        self.disconnect()
+        ml.quit()
+
+    def disconnect(self):
+        self.client.start_disconnect()
+
+
+con = Connection(cred['id'],cred['secret'])
+ml = gobject.MainLoop()
+ml.run()
