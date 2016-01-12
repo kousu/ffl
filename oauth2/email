@@ -1,4 +1,5 @@
-# from http://www.mkyong.com/python/how-do-send-email-in-python-via-smtplib/
+#!/usr/bin/env python3
+
 import yaml
 cred = yaml.load(open("credentials.yml"))['email']
 
@@ -8,26 +9,37 @@ pwd = cred['secret']
 
 import sys
 import smtplib
+import email.message
 
+try:
+	from_ = cred['from']
+	to = sys.argv[1]
+	subject = sys.argv[2]
+	body = sys.argv[3] #TODO: support mail(1)-style read-from-stdin thing
+except IndexError:
+	usage()
+except KeyError:
+	print("You must configure account settings in credentials.yml", file=sys.stderr)
 
-from_ = sys.argv[1] if len(sys.argv)>1 else 'nick@saxophonekousu.ca'
-to = sys.argv[2] if len(sys.argv)>2 else 'kousue@gmail.com'
+msg = email.message.Message()
+msg['From'] = from_
+msg['To'] = to
+msg['Subject'] = subject
+msg.set_payload(body)
 
-starttls = False
+starttls = cred.get('starttls',False)
 #weird: with my server (comms.kousu.ca) I have to use smtps or else it rejects my auth
-# but gmail works fine 
+# but gmail works fine. So I've added a switch.
 if starttls:
-	smtpserver = smtplib.SMTP(server,587)
-	print(smtpserver.ehlo())
-	print(smtpserver.starttls()) #Dont need this becasue we're already SSL'd
+	smtp = smtplib.SMTP(server,587)
+	print(smtp.ehlo())
+	print(smtp.starttls()) #Dont need this becasue we're already SSL'd
 	# Notice: after starttls you must re-hello because your permissions ("smtp Capabilities") can change
 else:
-	smtpserver = smtplib.SMTP_SSL(server)
-print(smtpserver.ehlo())
-print(smtpserver.login(user, pwd))
-header = 'To:' + to + '\n' + 'From: ' + from_ + '\n' + 'Subject:testing \n'
-print(header)
-msg = header + '\n this is test msg from mkyong.com \n\n'
-print(smtpserver.sendmail(from_, to, msg))
-print('done!')
-print(smtpserver.close())
+	smtp = smtplib.SMTP_SSL(server)
+print(smtp.ehlo())
+print(smtp.login(user, pwd))
+
+
+smtp.send_message(msg)
+smtp.close()
