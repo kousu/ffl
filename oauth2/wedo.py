@@ -231,8 +231,16 @@ class Pseudoanon(Provider):
 		
 	
 	@classmethod
-	def handle(self, response):
-		return User(Pseudoanon.__name__.lower(), self.genid())
+	def handle(self):
+		if request.method == "GET":
+			# render a form
+			session['partial_pseudoanon_id'] = self.genid() #securely generate an id serverside; don't let the user choose!
+			return render_template("login_pseudoanon.html", id=session['partial_pseudoanon_id'], action=request.url)
+		elif request.method == "POST":
+			# read form results
+			login_user(User(Pseudoanon.__name__.lower(), session['partial_pseudoanon_id'], session['partial_pseudoanon_id'], request.form['name'], None))
+			del session['partial_pseudoanon_id']
+			return redirect("/")
 
 
 class OAuthProvider(Provider):
@@ -697,7 +705,7 @@ def logout():
 	return redirect("/")
 
 @app.route("/login")
-@app.route("/login/<provider>")
+@app.route("/login/<provider>", methods=["GET","POST"])
 def login(provider=None):
 	# TODO: put the rendering *into* each provider? so we just say /login/<provider>, find the provider, and do their code?
 	if provider is None:

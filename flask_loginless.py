@@ -40,6 +40,9 @@ import flask.ext.login
 # this has really nice UX: if you have the token you get in without thinking about it (ssh keys are like this too)
 # but it means *it must not* be sniffed, because it gives full access to the account
 
+# I should just call this "token auth"
+# note! lots of places use this! e.g. gitlab: https://gitlab.com/kousu/butts.atom?private_token=y2aAcB61xrC_-wKHT-16
+
 
 def make_more_secure_token(bitlength=64*8):
 	"Drop-in compatible with `flask.ext.login.make_secure_token <https://flask-login.readthedocs.org/en/latest/#flask.ext.login.make_secure_token>` but with *no* correlation between the user and the token."
