@@ -45,6 +45,8 @@ This is meant to outdo http://psa.matiasaguirre.net/, which is ridiculously over
   [ ] OpenID
   [ ] Email auth
   [ ] User/password auth (?)
+  [x] pseudoanon
+  [ ] sms
 [ ] Glitch:
  - tumblr (on OAuth1) and google (on OAuth2) both for some reason *always* re-prompt the user
    but the other sites log you in smoothly
@@ -157,9 +159,12 @@ class Provider(object):
 		raise NotImplementedError
 
 
+
+import oath
+from subprocess import Popen
 class SMS(Provider):
 	"""
-	
+		
 	Setting up on Vitelity.net is tricky.
 	0) login to https://portal.vitelity.net
 	1) provision a number (a "DID")
@@ -180,13 +185,59 @@ class SMS(Provider):
 	- Clickatell
 	- SMSGlobal
 	- Twilio (probably the most mature, at the moment)
-	
+
 	TODO: figure out a way to make sure these requests are rate-limited (besides waiting for your SMS prepaid credits to run out)
 	"""
 	# i.e. SMS
 	# <i class="fa fa-mobile"></i> https://fortawesome.github.io/Font-Awesome/icon/mobile/
 	name = "Mobile Phone"
 	icon = "mobile" #code = "tty" is also good
+	
+	@staticmethod
+	def normalize_number(tel):
+		# TODO: write this
+		# make sure, give an error on bad formats, etc
+		return tel
+	
+	@classmethod
+	def handle(self):
+		# this code is confusing because it handles three flows simulatenously
+		# it would be a *lot* cleaner as a coroutine, but Flask doesn't do coroutines.
+		if request.method == "GET":
+			return render_template("login_sms.html", mode="get_id")
+		elif request.method == "POST":
+			
+			
+			if 'id' in request.form:
+				# first reply: get the SMS number
+				session['sms_auth_id'] = self.normalize_number(request.form['id'])
+				session['sms_auth_name'] = request.form['name']
+			
+			
+			# generate a OATH key; we use the app key plus the user id, so that a) no one can make the key except us b) the keys are unique to each user
+			# potential attack: give a different
+			# note! we *don't* give the client the key!!
+			key = binascii.hexlify(("%s:%s" % (session['sms_auth_id'], app.secret_key)).encode('utf-8')).decode('ascii')
+			
+			if 'id' in request.form:
+				assert 'oath' not in request.form
+				
+				# send an SMS
+				Popen(["./sms", session['sms_auth_id'], "Your code for %s is %s" % (request.url, oath.totp(key,period=90))]) #Note: we *don't* wait on this to finish before responding to the user, because sms is slow and the totp code only lasts 30 seconds anyway.
+				
+				return render_template("login_sms.html", mode="get_oath")
+			elif 'oath' in request.form:
+				id = session.pop('sms_auth_id')
+				name = session.pop('sms_auth_name')
+
+				passed, _ = oath.accept_totp(key, request.form['oath'], period=90)
+				if not passed:
+					flash("That oath code didn't work, enter another or <a href='%s'>start again</a>." % (url_for("login",provider=self.__name__.lower()),))
+					return render_template("login_sms.html", mode="get_oath")
+				
+				login_user(User(self.__name__.lower(), id, None, name, None))
+				return redirect("/")
+	
 
 class Email(Provider):
 	# uhh, this isn't an OAuth provider sooooo I need to rethink stuff a bit

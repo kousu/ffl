@@ -1,0 +1,5 @@
+#!/bin/sh
+# 
+
+HERE=$(dirname $0)
+HOME=$HERE python $HERE/xsend.py "$1" "$2"
