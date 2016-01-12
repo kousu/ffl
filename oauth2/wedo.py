@@ -34,6 +34,7 @@ This is meant to only be an *identity* provider.
 This is meant to outdo http://psa.matiasaguirre.net/, which is ridiculously overengineered.
 
 
+[ ] Patch bootstrap-social to cover pseudoanon, email, user/pass, and phones
 [x] Write providers as classes instead of a dict
 [x] Extract user details to a useful user object
  [x] avatars too
@@ -81,6 +82,7 @@ logging.basicConfig(level=logging.DEBUG) # turn up logging so we can see inside 
 	# note that this logger is *not* the same as the Flask logger
 
 
+WORDLIST = "/usr/share/dict/words"
 
 app = Flask(__name__) #TODO: use Blueprints (but Blueprints are dumb, argh)
 app.debug = True
@@ -156,6 +158,31 @@ class Provider(object):
 
 
 class SMS(Provider):
+	"""
+	
+	Setting up on Vitelity.net is tricky.
+	0) login to https://portal.vitelity.net
+	1) provision a number (a "DID")
+	2) find the number's status page
+	3) click "add SMS" on it (whatever Vitelity has renamed it now)
+	4) try the XMPP interface: login as <number>@s.ms and try sending a message to <othernumber>@sms (note: they dropped the period in the vhost name, just to be confusing)
+	  if that doesn't work, wait an hour
+	  if it still doesn't work, open a support ticket, and wait
+	5) Configure your account for API access from the IP you're sitting behind (link???)
+	
+	Thought they they provide an `API <http://apihelp.vitelity.net/#sendsms>` they say "Bots and scripts not allowed" on the SMS config page
+	this is probably just covering themselves against running up against CTIA regulations:
+	  http://www.experian.com/blogs/marketing-forward/2013/01/02/sms-compliance-what-you-dont-know-can-hurt-you/
+	but, so long as you're not /spamming/ (and auth is hardly spam) you should be legal. probably. IANAL.
+	or you could just set up an xmpp client (`sj? <https://github.com/younix/sj>`). a layer of indirection, but arguably faster to config.
+	
+	other providers:
+	- Clickatell
+	- SMSGlobal
+	- Twilio (probably the most mature, at the moment)
+	
+	TODO: figure out a way to make sure these requests are rate-limited (besides waiting for your SMS prepaid credits to run out)
+	"""
 	# i.e. SMS
 	# <i class="fa fa-mobile"></i> https://fortawesome.github.io/Font-Awesome/icon/mobile/
 	name = "Mobile Phone"
@@ -174,29 +201,184 @@ class Local(Provider):
 	name = "Username/Password"
 	icon = "sign-in"
 
+
 class Pseudoanon(Provider):
 	# TODO
 	# this is the pseudoanonymous option, where there is no way to prove
 	# my idea is: click once on a subscribe link, possibly fill in a profile (that is, name and avatar, but not login!) and an account is generated for you, along with an auth token
 	# then to get back in you must click the auth token link. there's no username or password
+	
+	with open(WORDLIST) as o:
+		logging.info("Loading wordlist %s", WORDLIST)
+		_words = list(set(e.strip().lower().split("'")[0] for e in o)) #TODO: stem the words
+		if len(_words) < 2**16:
+			raise ValueError("Not enough words in '%s' for us: we assume 16 bits worth (65536) of words." % (WORDLIST,))
+	from uuid import uuid4 as _uuid4
+	
+	
 	name = "Pseudoanomity"
 	icon = "barcode" #"asterisk"?
-
-
-class OAuth1Provider(Provider):
-	"""
 	
-	"""	
-	request_url = None
+	@classmethod
+	def genid(self):
+		id = self._uuid4()
+		id = id.bytes
+		# chunk id into 16, which is ~about~ the size of the wordlist
+		id = [(id[i]<<8)|id[i+1] for i in range(0,len(id),2)]
+		id = [self._words[c] for c in id]
+		id = "-".join(id)
+		return id
+		
+	
+	@classmethod
+	def handle(self, response):
+		return User(Pseudoanon.__name__.lower(), self.genid())
+
+
+class OAuthProvider(Provider):
 	auth_url = None
 	token_url = None
-	
-	scope = None
 
 	def __init__(self, id, secret):
 		self.app_id = id
 		self.app_secret = secret #TODO: check types
 
+
+class OAuth1Provider(OAuthProvider):
+	"""
+	
+	"""	
+	# OAuth1 has an extra URL it needs to hit
+	request_url = None
+	
+
+	@classmethod
+	def handle(self):
+		"""
+		
+		This code is almost identical to the OAuth2 flow. But it's just different enough making it that it needs to be separate but not so large that it's worth trying to factor.
+			
+		"""
+		provider = self #HACKS
+		
+		# this code adapted from https://requests-oauthlib.readthedocs.org/en/latest/examples/tumblr.html
+		S = OAuth1Session(provider.app_id,
+		                  client_secret=provider.app_secret,
+	       		          callback_uri=urlstrip(request.url)) #note: OAuth2 calls renamed this to "redirect_uri", just to complicate your life.
+		
+		if request.args.get("oauth_token") is None: #<-- FLASK
+			session['oauth_state'] = S.fetch_request_token(provider.request_url)
+			# construct the session-specific auth url at the provider to send the user over to
+			auth_url = S.authorization_url(provider.auth_url)
+			return redirect(auth_url) #<-- FLASK
+		else:
+			# restore the state from the first request
+			S._populate_attributes(session['oauth_state'])
+			del session['oauth_state']
+			
+			S.parse_authorization_response(request.url) #<-- FLASK
+			S.fetch_access_token(provider.token_url)
+			
+			try:
+				user = provider.whoami(S)
+			except:
+				return "You suck", 500
+
+			login_user(user)
+				
+			return redirect("/")
+
+
+
+
+class OAuth2Provider(Provider):
+	"""
+	sub-base class for OAuth2 identity providers
+	
+	Holds the remote OAuth endpoints in {auth,token}_url,
+	and at init stores the app_{id, secret} strings that you need to get by registering a developer account with the OAuth provider,
+	and has the whoami() method which is called after OAuth completes to extract account details
+	 (because OAuth is an authorization not, directly, an authentication protocol)
+	
+	Naming matters! Your subclasses must match the names shared between oauth-dropins/bootstrap-social/, because it gets scraped to generate identifying strings.
+	 (but you can choose your own capitalization; they are .lower()ed before use)
+
+	This clusterfuck is because OAuth couldn't just spec something like "OAuth is a RESTful protocol and it MUST live at site.com/oauth/". bastards.
+	 each site's URLs have to be researched, and kept up to date,
+	 and further each site has to have custom code for extracting identity information once you've got an auth token.
+	
+	# TODO:
+	# set up auto-token-refresh https://requests-oauthlib.readthedocs.org/en/latest/oauth2_workflow.html#third-recommended-define-automatic-token-refresh-and-update
+	"""
+	auth_url = None
+	token_url = None
+	scope = None
+	
+	def __init__(self, id, secret):
+		self.app_id = id
+		self.app_secret = secret #TODO: check types
+
+	
+	@classmethod
+	def handle(self):
+		"""
+		An endpoint which handles client (i.e. application) side OAuth.
+		
+		To login, a user GETs this endpoint.
+		Then we look up the proper provider in our backend and redirect them over there.
+		The provider (should) asks the client to auth us, and if so redirects them back
+		to us *at the same endpoint* (which is unusual: most OAuth flows have separate endpoints, one for the initial click, one for the callback, and one for the finishing step)
+		
+		"""
+		provider = self #HACK
+		
+		# This code adapted from https://requests-oauthlib.readthedocs.org/en/latest/examples/facebook.html
+		
+		# An OAuth "app" is an account stored at provider which consists of
+		#  at least (name, app_id, app_secret, callback)
+		# redirect_uri is callback_uri, and it is where.
+		# Providers have different rules about what callback is; Github wants it to be a prefix of a URI that you'll send as redirect_uri
+		# Facebook lets you leave it blank but makes you fill in a domain name and checks that at least that matches.
+		# 
+	
+		# We want this one endpoint to handle *all* the callbacks for all the providers,
+		# so we set redirect_uri to request.url (e.g. https://localhost:5000/oauth2/facebook)
+		# but we need it normalized because during the callback we get something like https://localhost:5000/oauth2/facebook?code=AQABl4ziZe9QsS1ZmT9QS1K5gZFV88M7YD5F0jGHcfuFKxFAF1QvqamERgXYSyHfYSFwnyrcyvmx1lQnJPMucUVI0VDr4OQIbHDafsnGKed65A6OLWbgH5SxQIu--IWC14bDvUMeIP5QcXgHKa5RTG755YqDGBDSn9fUxI_RioLrwzLyMiSad1E2ygK4Slofh6P0gcKZ4GDvAnaQHLFrBDhtZ7o-w-Wgv2VWkdjvsrrS75uFfa0-Ms_Cbg8-tLXJO7FGvfMJRZ1fJZo6x5_l0C3SvVIdNthwEf4T_Z0Ya7bg4dK9MHnHkTijhiETIHBvebwTRFm3FTgMB1R5BBqk8fax&state=64z2IR2IYZJ1l96DckFgmnNbnJcVjQ
+		# which is technically wrong, certainly wasteful, and actively pisses off at least Facebook who says "this URL doesn't match!" and fails the fetch_token()
+		S = OAuth2Session(provider.app_id,
+		                  redirect_uri=urlstrip(request.url),
+		                  scope=provider.scope)
+		
+	
+		if provider == 'facebook': #HACK
+			# TODO: scan requests_oauthlib.compliance_fixes to find all the fixes and apply the correct one
+			# requires assuming that we choose consistent provider names, but I think we can probably make that happen
+			S = facebook_compliance_fix(S) #arrrgh
+	
+		# We figure out if we're the initial click or a callback
+		if request.args.get("state") is None:
+			# Initial click
+			# construct the session-specific auth url at the provider to send the user over to
+			auth_url, session['oauth_state'] = S.authorization_url(provider.auth_url)
+			return redirect(auth_url)
+		else:
+			# Callback! Fetch a token!
+			S._state = session['oauth_state']
+			del session['oauth_state']
+			
+			# NOTICE: we *don't* reload the state from the query string, instead it's from the session
+			# this protects against CSRF because 
+			# (the actual check is buried in oauthlib.oauth2.rfc6749.parameters.parse_authorization_code_response())
+			token = S.fetch_token(provider.token_url, authorization_response=request.url, client_secret=provider.app_secret, client_id=provider.app_id, auth=HTTPNullAuth)
+			
+			try:
+				user = provider.whoami(S)
+			except:
+				return "You suck", 500
+
+			login_user(user)
+				
+			return redirect("/")
 
 	
 
@@ -280,33 +462,6 @@ class Tumblr(OAuth1Provider):
 		#                           id,           username,    name, avatar
 		return User('tumblr', profile['name'], profile['name'], blog['name'], avatar.url)
 	
-
-class OAuth2Provider(Provider):
-	"""
-	sub-base class for OAuth2 identity providers
-	
-	Holds the remote OAuth endpoints in {auth,token}_url,
-	and at init stores the app_{id, secret} strings that you need to get by registering a developer account with the OAuth provider,
-	and has the whoami() method which is called after OAuth completes to extract account details
-	 (because OAuth is an authorization not, directly, an authentication protocol)
-	
-	Naming matters! Your subclasses must match the names shared between oauth-dropins/bootstrap-social/, because it gets scraped to generate identifying strings.
-	 (but you can choose your own capitalization; they are .lower()ed before use)
-
-	This clusterfuck is because OAuth couldn't just spec something like "OAuth is a RESTful protocol and it MUST live at site.com/oauth/". bastards.
-	 each site's URLs have to be researched, and kept up to date,
-	 and further each site has to have custom code for extracting identity information once you've got an auth token.
-	
-	# TODO:
-	# set up auto-token-refresh https://requests-oauthlib.readthedocs.org/en/latest/oauth2_workflow.html#third-recommended-define-automatic-token-refresh-and-update
-	"""
-	auth_url = None
-	token_url = None
-	scope = None
-	
-	def __init__(self, id, secret):
-		self.app_id = id
-		self.app_secret = secret #TODO: check types
 
 
 
@@ -407,7 +562,10 @@ class Facebook(OAuth2Provider):
 # But to do that means remembering how metaclasses work.
 # This is almost as fast, and simpler for me to write.
 PROVIDERS = {cls.__name__.lower(): cls for cls in (e for e in locals().values() if isinstance(e,type)) if issubclass(cls, Provider)}
-del PROVIDERS['provider'] #remove cruft
+del PROVIDERS['provider'] #remove abstract base classes
+del PROVIDERS['oauthprovider']
+del PROVIDERS['oauth1provider']
+del PROVIDERS['oauth2provider']
 
 
 
@@ -492,36 +650,6 @@ def logout_user():
 
 
 
-def oauth1(provider):
-	"""
-	
-	This code is almost identical to the OAuth2 flow. But it's just different enough making it that it needs to be separate but not so large that it's worth trying to factor.
-	
-	"""
-	
-	# this code adapted from https://requests-oauthlib.readthedocs.org/en/latest/examples/tumblr.html
-	S = OAuth1Session(provider.app_id,
-	                  client_secret=provider.app_secret,
-	       	          callback_uri=urlstrip(request.url)) #note: OAuth2 calls renamed this to "redirect_uri", just to complicate your life.
-	
-	if request.args.get("oauth_token") is None: #<-- FLASK
-		session['oauth_state'] = S.fetch_request_token(provider.request_url)
-		# construct the session-specific auth url at the provider to send the user over to
-		auth_url = S.authorization_url(provider.auth_url)
-		return redirect(auth_url) #<-- FLASK
-	else:
-		# restore the state from the first request
-		S._populate_attributes(session['oauth_state'])
-		del session['oauth_state']
-		
-		S.parse_authorization_response(request.url) #<-- FLASK
-		S.fetch_access_token(provider.token_url)
-		
-		user = provider.whoami(S)
-		login_user(user)
-		
-		return redirect("/")
-
 
 
 import requests.auth
@@ -548,62 +676,6 @@ HTTPNullAuth=HTTPNullAuth() #it might as well be a singleton
 
 
 
-def oauth2(provider):
-	"""
-	An endpoint which handles client (i.e. application) side OAuth.
-	
-	To login, a user GETs this endpoint.
-	Then we look up the proper provider in our backend and redirect them over there.
-	The provider (should) asks the client to auth us, and if so redirects them back
-	to us *at the same endpoint* (which is unusual: most OAuth flows have separate endpoints, one for the initial click, one for the callback, and one for the finishing step)
-	
-	"""
-	
-	# This code adapted from https://requests-oauthlib.readthedocs.org/en/latest/examples/facebook.html
-	
-	# An OAuth "app" is an account stored at provider which consists of
-	#  at least (name, app_id, app_secret, callback)
-	# redirect_uri is callback_uri, and it is where.
-	# Providers have different rules about what callback is; Github wants it to be a prefix of a URI that you'll send as redirect_uri
-	# Facebook lets you leave it blank but makes you fill in a domain name and checks that at least that matches.
-	# 
-
-	# We want this one endpoint to handle *all* the callbacks for all the providers,
-	# so we set redirect_uri to request.url (e.g. https://localhost:5000/oauth2/facebook)
-	# but we need it normalized because during the callback we get something like https://localhost:5000/oauth2/facebook?code=AQABl4ziZe9QsS1ZmT9QS1K5gZFV88M7YD5F0jGHcfuFKxFAF1QvqamERgXYSyHfYSFwnyrcyvmx1lQnJPMucUVI0VDr4OQIbHDafsnGKed65A6OLWbgH5SxQIu--IWC14bDvUMeIP5QcXgHKa5RTG755YqDGBDSn9fUxI_RioLrwzLyMiSad1E2ygK4Slofh6P0gcKZ4GDvAnaQHLFrBDhtZ7o-w-Wgv2VWkdjvsrrS75uFfa0-Ms_Cbg8-tLXJO7FGvfMJRZ1fJZo6x5_l0C3SvVIdNthwEf4T_Z0Ya7bg4dK9MHnHkTijhiETIHBvebwTRFm3FTgMB1R5BBqk8fax&state=64z2IR2IYZJ1l96DckFgmnNbnJcVjQ
-	# which is technically wrong, certainly wasteful, and actively pisses off at least Facebook who says "this URL doesn't match!" and fails the fetch_token()
-	S = OAuth2Session(provider.app_id,
-	                  redirect_uri=urlstrip(request.url),
-	                  scope=provider.scope)
-	
-	
-	if provider == 'facebook': #HACK
-		# TODO: scan requests_oauthlib.compliance_fixes to find all the fixes and apply the correct one
-		# requires assuming that we choose consistent provider names, but I think we can probably make that happen
-		S = facebook_compliance_fix(S) #arrrgh
-	
-	# We figure out if we're the initial click or a callback
-	if request.args.get("state") is None:
-		# Initial click
-		# construct the session-specific auth url at the provider to send the user over to
-		auth_url, session['oauth_state'] = S.authorization_url(provider.auth_url)
-		return redirect(auth_url)
-	else:
-		# Callback! Fetch a token!
-		S._state = session['oauth_state']
-		del session['oauth_state']
-		
-		# NOTICE: we *don't* reload the state from the query string, instead it's from the session
-		# this protects against CSRF because 
-		# (the actual check is buried in oauthlib.oauth2.rfc6749.parameters.parse_authorization_code_response())
-		token = S.fetch_token(provider.token_url, authorization_response=request.url, client_secret=provider.app_secret, client_id=provider.app_id, auth=HTTPNullAuth)
-		
-		user = provider.whoami(S) #call the user-id extracting callback
-		
-		# TODO: provide a hook so that on login
-		login_user(user)
-		
-		return redirect("/")
 
 
 @app.route('/user/<userid>')
@@ -629,6 +701,7 @@ def logout():
 def login(provider=None):
 	# TODO: put the rendering *into* each provider? so we just say /login/<provider>, find the provider, and do their code?
 	if provider is None:
+		# TODO: sort the OAuths before the OpenIDs before User/pass before Email before Pseudoanon
 		return render_template("login.html", providers=[PROVIDERS[p] for p in sorted(PROVIDERS)])
 	else:
 		try:
@@ -639,11 +712,21 @@ def login(provider=None):
 		except KeyError:
 			return "Unsupported OAuth provider.", 404
 		
-		# XXX sketchy type-switch
-		if issubclass(provider, OAuth1Provider):
-			return oauth1(provider)
-		else:
-			return oauth2(provider)
+		#
+		return provider.handle() #..wait.. what if the provider needs to redirect? or has a different number of steps in their flow? or whatever? fuck
+		# reallllllly what I need is to call/cc, aka yield, aka what python has, but what Flask doesn't support. hm. 
+		# is difficult to use;5D
+		
+
+# as a console program, without having to worry about saving state:
+# login():
+# method = ask_for_login_method()
+# try:
+#   user = method()
+#   login_user(user)
+# except AuthFail: pass
+# loop back up to the menu, now 
+
 
 if __name__ == '__main__':
 	app.debug = True
