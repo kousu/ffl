@@ -645,8 +645,18 @@ def load_user():
 		app.logger.warn(exc)
 		pass
 
+import binascii, hashlib
+
 def login_user(user):
 	"log user in. This is a mock for Flask-Login's login()"
+	if not user.avatar:
+		# generate a gravatar for them
+		# https://en.gravatar.com/site/implement/hash/
+		# gravatars are *supposed* to be a hash of an email address
+		# but i'm explicitly not relying on knowing email addresses
+		# so just generate *some* hash and use that
+		hash = str(binascii.hexlify(hashlib.sha256(bytes(user.id,"utf-8")).digest()),"ascii") #
+		user.avatar = "https://www.gravatar.com/avatar/%s.jpg" % (hash,)
 	session['user'] = user.dumpJSON()
 
 def logout_user():
