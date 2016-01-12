@@ -27,6 +27,8 @@ Security:
 - [ ] Directory traversal is definitely possible in a lot of places. I'm a little bit surprised Flask doesn't stomp that in the nuts.
 - [ ] Give 404 instead of 401 for ACL failures, but only on view_post: post titles give away secrets, sometimes, so we want to do our best to avoid leaking what we can.
 
+
+
 UI:
 - [ ] Use a <textarea> editor so that if javascript isn't running the posts can still be edited, just not as smoothly
 - [ ] Put the editor inline on the post page: clicking "Edit"
@@ -48,6 +50,10 @@ UX:
 
 Data:
 - [ ] Store post dates in UTC instead of in whatever the server's timezone is --- but use the client's ..local..? time? (<input type="datetime-local"> would solve all these, because it always gives Zulu time to the API but local time to the user, but no browsers support it yet)
+- [ ] Frontmatter parsing
+  Here's how jekyll does it, for compatibilty: https://github.com/jekyll/jekyll/blob/92ba22f8fe30dc9bbe53585f60586c77e7cc3e14/lib/jekyll/document.rb#L269
+  basically: it regexes for ---<stuff>---, parses <stuff> as YAML and takes whatever comes after (via the perlesque magic variable $POSTMATCH) as markdown
+  that's not a terrible way to do it.
 
 Testing:
 - [ ] Write some unit tests!
