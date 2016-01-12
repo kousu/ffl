@@ -1,0 +1,26 @@
+{% extends "_layout.html" %}
+{% block content %}
+  <h1>Login with Mobile Phone</h1>
+  <p>If you identify yourself this way, your phone number will be published.</p>
+  <div style='width: 30%; margin-left: auto; margin-right: auto'>
+  <form method="POST" action="{{action}}">
+  {% if mode == "get_id" %}
+  <p>You may choose a display name, but if you wish to remain fully anonymous just click the button.</p>
+
+   <!-- XXX this should really have CSRF protection -->
+     <div><input style='width: 100%' name="id" type="text" placeholder="Phone number"></div>
+     <div><input style='width: 100%' name="name" type="text" placeholder="Display name (optional)"></div>
+     <div style='text-align: center'><button>Send oath code</button></div>
+  <p>Note: the oath code will only be good for 5 minutes. If your phone does not receive it within that time you will need to ask for a new one.</p>
+  {% elif mode == "get_oath" %}
+     <div><input style='width: 100%' name="oath" type="text" placeholder="6-digit oath code"></div>
+     <div style='text-align: center'><button>Login</button></div>
+  {% endif %}
+  </form>
+<br/>
+{% endblock %}
+
+
+{% block nav %}
+<!-- wipe out the generic nav block when on the login page -->
+{% endblock %}
