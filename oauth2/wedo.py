@@ -72,7 +72,7 @@ import yaml
 from urllib.parse import *
 import requests
 from requests_oauthlib import *
-from requests_oauthlib.compliance_fixes import facebook_compliance_fix
+import requests_oauthlib.compliance_fixes
 
 import time
 
@@ -515,12 +515,10 @@ class OAuth2Provider(Provider):
 		                  redirect_uri=urlstrip(request.url),
 		                  scope=provider.scope)
 		
-	
-		if provider == 'facebook': #HACK
-			# TODO: scan requests_oauthlib.compliance_fixes to find all the fixes and apply the correct one
-			# requires assuming that we choose consistent provider names, but I think we can probably make that happen
-			S = facebook_compliance_fix(S) #arrrgh
-	
+		# autoload compliance fix for the provider, if it exists
+		S = getattr(requests_oauthlib.compliance_fixes, '%s_compliance_fix' % (provider,), lambda e: e)(S)
+		
+		
 		# We figure out if we're the initial click or a callback
 		if request.args.get("state") is None:
 			# Initial click
@@ -529,8 +527,7 @@ class OAuth2Provider(Provider):
 			return redirect(auth_url)
 		else:
 			# Callback! Fetch a token!
-			S._state = session['oauth_state']
-			del session['oauth_state']
+			S._state = session.pop('oauth_state')
 			
 			# NOTICE: we *don't* reload the state from the query string, instead it's from the session
 			# this protects against CSRF because 
