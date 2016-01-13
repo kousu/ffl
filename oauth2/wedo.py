@@ -276,7 +276,7 @@ class SMS(Provider):
 				
 				# RATE LIMITING:
 				# totp() outputs a 6 digit code, so that's a million options.
-				# if you can check 1000 options per second (not unreasonable) you
+				# if you can check 1000 options per second (not unreasonable: a botnet with 1000 members could) you
 				# so we need to protect against this
 				# this make sure no more than 1 request per second from a single connection
 				# TODO: detect how well this works
@@ -397,6 +397,33 @@ class Local(Provider):
 	#  which could be PAM or LDAP or something in a custom database
 	name = "Username/Password"
 	icon = "sign-in"
+	
+	@staticmethod
+	def link(id):
+		return url_for("user", userid=id)
+	
+	@classmethod
+	def handle(self):
+		
+		if request.method=="GET":
+			return render_template("login_local.html", mode=request.args.get("mode","login"))
+		elif request.method == "POST":
+			if not self.verify(request.form['id'], request.form['pass']):
+				flash("Login incorrect.")
+				return redirect(request.url)
+			
+			name = None
+			# name = lookup_id_in_database(request.form['id'])
+			login_user(User(self.__name__.lower(), request.form['id'], name))
+			return redirect("/")
+	
+	@staticmethod
+	def verify(user, password):
+		"""
+		override this to plug in your actual backend
+		"""
+		return True #debug
+		return False
 
 
 class Pseudoanon(Provider):

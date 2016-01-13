@@ -1,0 +1,22 @@
+{% extends "_dialog.html" %}
+
+{% block title %}
+{{mode.title()}} with Local Account
+{% endblock %}
+
+{% block content %}
+  <form method="POST" action="{{action}}">
+     <div><input style='width: 100%' name="id" type="text" placeholder="Username"></div>
+     <div><input style='width: 100%' name="pass" type="password" placeholder="Password"></div>
+  {% if mode == "register" %}
+    <p>If you identify yourself this way, your phone number will be published.</p>
+   <!-- XXX this should really have CSRF protection -->
+     <div><input style='width: 100%' name="name" type="text" placeholder="Display name (optional)"></div>
+     <div style='text-align: center'><button>Register</button></div>
+  {% else %}
+     <div style='text-align: center'><button>Login</button>       <a href="{{url_for("login", provider="local")}}?mode=register">Register</a></div>
+  {% endif %}
+  </form>
+
+{% endblock %}
+
