@@ -33,7 +33,7 @@ TODO:
 This is meant to only be an *identity* provider.
 This is meant to outdo http://psa.matiasaguirre.net/, which is ridiculously overengineered.
 
-
+[ ] CSRF!! (WTForms!)
 [ ] Patch bootstrap-social to cover pseudoanon, email, user/pass, and phones
 [x] Write providers as classes instead of a dict
 [x] Extract user details to a useful user object
@@ -185,7 +185,7 @@ class SMS(Provider):
 	- Clickatell
 	- SMSGlobal
 	- Twilio (probably the most mature, at the moment)
-
+	- les.net
 	TODO: figure out a way to make sure these requests are rate-limited (besides waiting for your SMS prepaid credits to run out)
 	"""
 	# i.e. SMS
@@ -790,6 +790,8 @@ def login_user(user):
 		hash = str(binascii.hexlify(hashlib.sha256(bytes(user.id,"utf-8")).digest()),"ascii") #
 		user.avatar = "https://www.gravatar.com/avatar/%s.jpg" % (hash,)
 	session['user'] = user.dumpJSON()
+	
+	flash("You are now logged in as %s. Welcome!" % (user.id,))
 
 def logout_user():
 	"log user out. This is a mock for Flask-Login's login()"

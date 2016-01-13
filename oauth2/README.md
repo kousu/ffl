@@ -65,9 +65,14 @@ Any provider listed in credentials.yml which has a corresponding provider hook i
 will be activated and listed on the WebUI.
 (to see the full list of implemented providers do ....)
 
+Plus *if you move servers* you will need to go and tell *each* OAuth provider your new address, because they generally whitelist what domains can go with each client app. Fuckers.
+
 In theory, then you need to integrate the auth handler with the rest of your (web) app.
 For now, just make sure you have python-Flask installed and do `./wedo.py`
 
+You also need `/usr/share/dict/words` installed (for pseudoanon)
+
+You also need to set up a VoIP provider and make the `./sms` script able to send messages if you want SMS auth.
 
 Issues
 ------
