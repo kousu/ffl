@@ -239,12 +239,92 @@ class SMS(Provider):
 				return redirect("/")
 	
 
+
+# this code is the worst I've written in a long time
+# but it does the thing it supposed to
+
+# fernet is like its dangerous except it also encrypts
+from cryptography.fernet import Fernet, InvalidToken
+
+
+#fernet = Fernet(Fernet.generate_key()) #<-- note: we're using a *different* key than the app key. Fernet is picky about key sizes (unlike it's dangerous)
+k = b'pZZNksB_QZz0JIzh1mUl9Kc4lKatmj4QLMpXfxwVyNE='
+fernet = Fernet(k) #<-- note: we're using a *different* key than the app key. Fernet is picky about key sizes (unlike it's dangerous)
+
+
+from urllib.parse import *
 class Email(Provider):
 	# uhh, this isn't an OAuth provider sooooo I need to rethink stuff a bit
 	# to prove you own an email, we send a token to that address and you paste it back to us,
 	# either by clicking a link with the token embedded or by copy-pasting it directly at us
+	
+	# Q: should I use TOTP for this too, or something else?
+	# I could use this scheme:
+	#  - generate a json string that says {"id": <...>}, sign it with itsdangerous, and maybe encrypt it with AES just to keep prying eyes away.
+	#  - when the user presents this, we grab the id back out
+	# TOTP is tricky to do statelessly.
+	# to do TOTP we would have to include the email you're authing as in the, and I would have to think through that to make sure it's secure
+	
 	name = "Email"
 	icon = "envelope"
+
+	AUTH_WINDOW = 2*24*60 # 2 days
+	#AUTH_WINDOW = 40 #40 seconds DEBUG
+	
+	# this code is soooo bad
+	# ugh
+	# fuck youuuu Flask
+	# what can I do instead?? keep a global dictionary of coroutines in process? that means holding onto state, and that's scary.
+	# plus Flask doesn't assign session IDs (but Flask-Login does) so i'd have to roll my own somehow.
+	#
+	
+	@classmethod
+	def handle(self):
+		provider = self #HACKS
+		
+		if request.method=="GET" and 't' not in request.args:
+			# initial display
+			return render_template("login_email.html")
+		
+		elif request.method=="POST":			
+			
+			
+			token = {'id': request.form['id'], 'name': request.form['name']} #request.form is an ImmutableMultiDict, so just casting it gives {'id': [<id>], 'name': [<name>]} because each element could potentially be a list
+			# but it special-cases  to behave like a normal dict in the common case of a single element
+			# but if we're gonna be serializing this shit
+			#validate_email_format(token['id']) #TODO
+
+			# dict -> str -> bytes -> crypted bytes -> str
+			# the first step uses utf-8 because we could have any characters, but the last step uses ascii because fernet base64s stuff
+			# XXX is using json a security hole? It means that there's multiple encodings with the same meaning.
+			token = fernet.encrypt(json.dumps(token).encode("utf-8")).decode("ascii")
+			
+			id = request.form['id']
+			subject = "Email Verification"
+			msg = "Verify your email address at:\r\n\r\n%s" % ("%s?%s" % (request.url, urlencode({"t": token}),))
+			
+			Popen(["./email", id, subject, msg])
+			
+			return render_template("login_email.html", mode="sent", id=id)
+		
+		elif request.method=="GET" and 't' in request.args:
+			
+			try:
+				# extact the token
+				# implicitly, since fernet signs the token, no one can construct one of these except for us
+				# now, someone *could* replay, but maybe replays aren't so terrible a threat, especially if we don't keep account state
+				# str -> crypted bytes -> bytes -> str -> dict
+				token = json.loads(fernet.decrypt(request.args['t'].encode("ascii"), ttl=self.AUTH_WINDOW).decode("utf-8"))
+				
+				#access fields to ensure they exist
+				token['id']
+				token['name']
+			except (InvalidToken, KeyError):
+				flash("Email verification failed. Perhaps your token has expired.")
+				return redirect(url_for("login"))
+			
+			login_user(User('mailto', token['id'], None, token['name'], None))
+			return redirect("/")
 
 class Local(Provider):
 	# TODO
@@ -696,6 +776,7 @@ def load_user():
 		app.logger.warn(exc)
 		pass
 
+
 import binascii, hashlib
 
 def login_user(user):
@@ -765,7 +846,7 @@ def logout():
 	logout_user()
 	return redirect("/")
 
-@app.route("/login")
+@app.route("/login/")
 @app.route("/login/<provider>", methods=["GET","POST"])
 def login(provider=None):
 	# TODO: put the rendering *into* each provider? so we just say /login/<provider>, find the provider, and do their code?
