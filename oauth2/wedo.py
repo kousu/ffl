@@ -130,10 +130,9 @@ class User(object):
 		return json.dumps(self.__dict__)
 	
 	
-	def __init__(self, provider, userid, login=None, display_name=None, avatar=None):
+	def __init__(self, provider, userid, display_name=None, avatar=None):
 		self.provider = provider
 		self.userid = userid
-		self.login = login
 		self.display_name = display_name
 		self.avatar = avatar
 	
@@ -144,6 +143,10 @@ class User(object):
 		This is what should be used as a primary key in a database
 		"""
 		return "%s:%s" % (self.provider, self.userid)
+	
+	
+	def link(self):
+		raise NotImplementedError
 
 
 class Provider(object):
@@ -159,7 +162,21 @@ class Provider(object):
 		assert isinstance(session, requests.Session)
 		raise NotImplementedError
 
-
+	@classmethod
+	def link(id):
+		"""
+		generate a homepage link for the given user
+		"""
+		return "unknown:"
+		#raise NotImplementedError
+	
+	@staticmethod
+	def normalize_id(id):
+		"""
+		given a user id, validate and normalize it
+		"""
+		return id
+	
 
 
 import oath
@@ -177,6 +194,8 @@ def totp_key(provider, id):
 	"""
 	return binascii.hexlify(("%s:%s:%s" % (provider, id, app.secret_key)).encode('utf-8')).decode('ascii')
 
+
+import re
 
 class SMS(Provider):
 	"""
@@ -208,15 +227,21 @@ class SMS(Provider):
 	# <i class="fa fa-mobile"></i> https://fortawesome.github.io/Font-Awesome/icon/mobile/
 	name = "Mobile Phone"
 	icon = "mobile" #code = "tty" is also good
-	
-	@staticmethod
-	def normalize_number(tel):
-		# TODO: write this
-		# make sure, give an error on bad formats, etc
-		return tel
-	
+		
 	AUTH_WINDOW = 2*60 # 2 minutes
 	
+	@staticmethod
+	def normalize_id(tel):
+		# references: https://en.wikipedia.org/wiki/North_American_Numbering_Plan#Administration
+		id = "".join(t for t in tel if t.isdigit())
+		id = id[-10:]
+		if len(id) != 10:
+			raise ValueError("Invalid phone number")
+		return id
+	
+	@staticmethod
+	def link(id):
+		return id
 	
 	@classmethod
 	def handle(self):
@@ -229,7 +254,7 @@ class SMS(Provider):
 			
 			if 'id' in request.form:
 				# first reply: get the SMS number
-				session['sms_auth_id'] = self.normalize_number(request.form['id'])
+				session['sms_auth_id'] = self.normalize_id(request.form['id'])
 				session['sms_auth_name'] = request.form['name']
 			
 			
@@ -263,7 +288,7 @@ class SMS(Provider):
 					flash("That oath code didn't work, enter another or <a href='%s'>start again</a>." % (url_for("login",provider=self.__name__.lower()),))
 					return render_template("login_sms.html", mode="get_oath")
 				
-				login_user(User(self.__name__.lower(), id, None, name, None))
+				login_user(User(self.__name__.lower(), id, name))
 				return redirect("/")
 
 
@@ -298,6 +323,19 @@ class Email(Provider):
 	AUTH_WINDOW = 2*24*60 # 2 days
 	#AUTH_WINDOW = 40 #40 seconds DEBUG
 	
+	
+	@staticmethod
+	def normalize_id(id):
+		m = re.compile(r"\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b", re.I).match(id)
+		if not m:
+			raise ValueError("Invalid email address")
+		return id
+	
+	@staticmethod
+	def link(email):
+		return "mailto:%s" % (email,)
+	
+
 	# this code is soooo bad
 	# ugh
 	# fuck youuuu Flask
@@ -313,13 +351,12 @@ class Email(Provider):
 			# initial display
 			return render_template("login_email.html")
 		
-		elif request.method=="POST":			
-			
+		elif request.method=="POST":
 			
 			token = {'id': request.form['id'], 'name': request.form['name']} #request.form is an ImmutableMultiDict, so just casting it gives {'id': [<id>], 'name': [<name>]} because each element could potentially be a list
 			# but it special-cases  to behave like a normal dict in the common case of a single element
 			# but if we're gonna be serializing this shit
-			#validate_email_format(token['id']) #TODO
+			token['id'] = self.normalize_id(token['id']) #TODO
 
 			# dict -> str -> bytes -> crypted bytes -> str
 			# the first step uses utf-8 because we could have any characters, but the last step uses ascii because fernet base64s stuff
@@ -350,12 +387,14 @@ class Email(Provider):
 				flash("Email verification failed. Perhaps your token has expired.")
 				return redirect(url_for("login"))
 			
-			login_user(User('mailto', token['id'], None, token['name'], None))
+			login_user(User(self.__name__.lower(), token['id'], token['name']))
 			return redirect("/")
 
 class Local(Provider):
 	# TODO
 	# this would be the username/password option, I guess
+	# Unfortunately, this depends on having a *further* password backend
+	#  which could be PAM or LDAP or something in a custom database
 	name = "Username/Password"
 	icon = "sign-in"
 
@@ -376,6 +415,13 @@ class Pseudoanon(Provider):
 	
 	name = "Pseudoanomity"
 	icon = "barcode" #"asterisk"?
+
+
+	
+	@staticmethod
+	def link(email):
+		return "pseudoanon:%s" % (email,)
+	
 	
 	@classmethod
 	def genid(self):
@@ -396,8 +442,8 @@ class Pseudoanon(Provider):
 			return render_template("login_pseudoanon.html", id=session['partial_pseudoanon_id'], action=request.url)
 		elif request.method == "POST":
 			# read form results
-			login_user(User(Pseudoanon.__name__.lower(), session['partial_pseudoanon_id'], session['partial_pseudoanon_id'], request.form['name'], None))
-			del session['partial_pseudoanon_id']
+			id = session.pop('partial_pseudoanon_id')
+			login_user(User(self.__name__.lower(), id, request.form['name']))
 			return redirect("/")
 
 
@@ -482,7 +528,7 @@ class OAuth2Provider(Provider):
 	
 	def __init__(self, id, secret):
 		self.app_id = id
-		self.app_secret = secret #TODO: check types
+		self.app_secret = secret #TODO: check types	
 
 	
 	@classmethod
@@ -566,7 +612,11 @@ class Twitter(OAuth1Provider):
 	
 	name = "Twitter"
 	icon = "twitter"
-	
+
+	@staticmethod
+	def link(id):
+		return "https://twitter.com/%s" %(id,)
+		
 	@classmethod
 	def whoami(cls, session):
 		# https://dev.twitter.com/rest/reference/get/account/verify_credentials
@@ -574,11 +624,10 @@ class Twitter(OAuth1Provider):
 		profile.raise_for_status()
 		profile = profile.json()
 		
-		id = profile['id']
-		login = profile['screen_name']
+		id = profile['screen_name'] #note: *not* using the account ID, because hacks
 		name = profile['name']
 		avatar = profile['profile_image_url_https']
-		return User(cls.icon, id, login, name, avatar)
+		return User(cls.icon, id, name, avatar)
 	
 
 class Tumblr(OAuth1Provider):
@@ -592,6 +641,10 @@ class Tumblr(OAuth1Provider):
 	
 	name = "Tumblr"
 	icon = "tumblr"
+
+	@staticmethod
+	def link(id):
+		return "https://%s.tumblr.com/" %(id,)
 	
 	@staticmethod
 	def whoami(session):
@@ -623,7 +676,7 @@ class Tumblr(OAuth1Provider):
 		# (which tbh I'd prefer to do for everyone, but the way that names can be thrown away makes me think twice..)
 		# oh and for the avatar, we don't actually care about having the image data just yet, just the link is enough, so we can use .url:
 		#                           id,           username,    name, avatar
-		return User('tumblr', profile['name'], profile['name'], blog['name'], avatar.url)
+		return User('tumblr', profile['name'], blog['name'], avatar.url)
 	
 
 
@@ -645,6 +698,12 @@ class Google(OAuth2Provider):
 	
 	name = "Google"
 	icon = "google"
+
+	#@staticmethod
+	#def link(id):
+	#	#???
+	#	return "https://google.com/%s" %(id,)
+
 	
 	@classmethod
 	def whoami(self, session):
@@ -655,7 +714,7 @@ class Google(OAuth2Provider):
 		
 		# 'email' is only in profile if we ask for userinfo.email
 
-		return User(self.icon, profile['id'], None, profile['name'], profile['picture'])
+		return User(self.icon, profile['id'], profile['name'], profile['picture'])
 
 
 #OAuth-dropins decided to use inheritence, not composition: each provider subclasses 
@@ -670,6 +729,10 @@ class Github(OAuth2Provider):
 	icon = "github"
 	
 	@staticmethod
+	def link(id):
+		return "https://github.com/%s" %(id,)
+
+	@staticmethod
 	def whoami(session):
 		"""
 		returns:
@@ -679,8 +742,7 @@ class Github(OAuth2Provider):
 		"""
 		profile = session.get("https://api.github.com/user").json()
 		logging.debug("Received this profile from github:\n--------------\n%s\n--------------", pformat(profile))
-		return User("github", profile['id'], profile['login'], profile['name'], profile['avatar_url']+"&s=50") # the &s=50 makes github resize the picture to 50x50 before replying (this matches the only size Facebook will give out)
-		#return {k: v for k,v in profile.items() if k in ['id', 'name', 'login']}
+		return User("github", profile['login'], profile['name'], profile['avatar_url']+"&s=50") # the &s=50 makes github resize the picture to 50x50 before replying (this matches the only size Facebook will give out)
 
 
 class Facebook(OAuth2Provider):
@@ -697,6 +759,10 @@ class Facebook(OAuth2Provider):
 	
 	name = "Facebook"
 	icon = "facebook"
+
+	@staticmethod
+	def link(id):
+		return "https://facebook.com/app_scoped_user_id/%s" %(id,)
 	
 	@staticmethod
 	def whoami(session):
@@ -712,12 +778,10 @@ class Facebook(OAuth2Provider):
 		 (however, it doesn't require being logged in under any particular account: any FB account can follow that link and  get the username, *and* the original ID...which means it's a security hole that they'll probably notice and close within the year)
 		"""
 		profile = session.get("https://graph.facebook.com/v2.5/me?fields=id,name,picture{url}").json()
-		username = None # <-- this can't be recovered from /me
 		# NB: by using /me/picture it might be possible to get a larger image:
 		#   https://developers.facebook.com/docs/graph-api/reference/user/picture/
 		#   however so far everything i've tried has redirected me back to the 50x50 one, so I'll just live with that
-		return User("facebook", profile['id'], username, profile['name'], profile['picture']['data']['url']) #why picture.data.url? why not, says Facebook.
-		#return {k: v for k,v in profile.items() if k in ['id', 'name']}
+		return User("facebook", profile['id'], profile['name'], profile['picture']['data']['url']) #why picture.data.url? why not, says Facebook.
 
 # Make a big lookup table of all available providers
 # Now, the architectually nice way to do this would be with an event listener:
@@ -791,14 +855,15 @@ def urlstrip(url):
 @app.before_request
 def load_user():
 	
-	global current_user #TOTALLY NOT THREAD (i.e. multi-user) SAFE LOLOLOLOLOLOLOLOLOLOL SECURITY HOLLLLLLE
-	current_user = None
+	g.current_user = None
 	try:
 		if 'user' in session:
-			current_user = User.loadJSON(session['user'])
+			g.current_user = User.loadJSON(session['user'])
 	except Exception as exc:
 		app.logger.warn(exc)
 		pass
+	
+	g.PROVIDERS = PROVIDERS
 
 
 import binascii, hashlib
@@ -861,7 +926,8 @@ def user(userid):
 
 @app.route('/')
 def index():
-	return render_template("index.html", current_user=current_user)
+	flash("this is the index page!")
+	return render_template("index.html")
 
 @app.route('/logout', methods=["POST"])
 def logout():
@@ -904,9 +970,11 @@ def login(provider=None):
 # loop back up to the menu, now 
 
 
+import os
 if __name__ == '__main__':
 	app.debug = True
-	app.secret_key = "butts"
+	#app.secret_key = "butts"
+	app.secret_key = os.urandom(32)
 	
 	load_oauth_credentials()
 

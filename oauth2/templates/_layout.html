@@ -35,12 +35,12 @@ display: inline-block; width: 50%; position: relative; left: 0
 
     <nav id='controls' style='display: inline-block; width: 48%; position: relative; right: 0; text-align: right'>
     {% block nav %}
-      {% if current_user %}
-       <a href={{ url_for("user", userid=current_user.id) }}>
-        {% if current_user.avatar %}
-          <img alt='{{ current_user.display_name }}' title='{{ current_user.display_name }}' src='{{ current_user.avatar }}' />.
+      {% if g.current_user %}
+       <a href={{ g.PROVIDERS[g.current_user.provider].link(g.current_user.userid) }}>
+        {% if g.current_user.avatar %}
+          <img alt='{{ g.current_user.display_name }}' title='{{ g.current_user.display_name }}' src='{{ g.current_user.avatar }}' />.
         {% else %}
-          {{ current_user.display_name }}
+          {{ g.current_user.display_name }}
         {% endif %}
        </a>
        <form action={{ url_for("logout") }} method='POST'><button style='background: none; border: none'>Logout</button></form>
