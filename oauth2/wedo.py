@@ -74,6 +74,7 @@ import requests
 from requests_oauthlib import *
 from requests_oauthlib.compliance_fixes import facebook_compliance_fix
 
+import time
 
 from flask import *
 
@@ -160,8 +161,23 @@ class Provider(object):
 
 
 
+
 import oath
 from subprocess import Popen
+
+def totp_key(provider, id):
+	"""
+	Generate a key for use with totp, for the given user id
+	Normally with TOTP, you're supposed to use a random string (e.g.)
+	or perhaps the user's password
+	but the point of this system is to prove that someone is who they say,
+	which means we don't have (or, it's really tricky to have) state like that.
+	and we can't just give out a key because that ruins it
+	so this concats `id` to the flask secret key and writes it in hex (which oath.totp() requires)
+	"""
+	return binascii.hexlify(("%s:%s:%s" % (provider, id, app.secret_key)).encode('utf-8')).decode('ascii')
+
+
 class SMS(Provider):
 	"""
 		
@@ -199,6 +215,9 @@ class SMS(Provider):
 		# make sure, give an error on bad formats, etc
 		return tel
 	
+	AUTH_WINDOW = 2*60 # 2 minutes
+	
+	
 	@classmethod
 	def handle(self):
 		# this code is confusing because it handles three flows simulatenously
@@ -217,27 +236,35 @@ class SMS(Provider):
 			# generate a OATH key; we use the app key plus the user id, so that a) no one can make the key except us b) the keys are unique to each user
 			# potential attack: give a different
 			# note! we *don't* give the client the key!!
-			key = binascii.hexlify(("%s:%s" % (session['sms_auth_id'], app.secret_key)).encode('utf-8')).decode('ascii')
+			key = totp_key(self.__name__.lower(), session['sms_auth_id'])
 			
 			if 'id' in request.form:
 				assert 'oath' not in request.form
 				
 				# send an SMS
-				Popen(["./sms", session['sms_auth_id'], "Your code for %s is %s" % (request.url, oath.totp(key,period=90))]) #Note: we *don't* wait on this to finish before responding to the user, because sms is slow and the totp code only lasts 30 seconds anyway.
+				Popen(["./sms", session['sms_auth_id'], "Your code for %s is %s" % (request.url, oath.totp(key,period=self.AUTH_WINDOW))]) #Note: we *don't* wait on this to finish before responding to the user, because sms is slow and the totp code only lasts 30 seconds anyway.
 				
 				return render_template("login_sms.html", mode="get_oath")
 			elif 'oath' in request.form:
 				id = session.pop('sms_auth_id')
 				name = session.pop('sms_auth_name')
-
-				passed, _ = oath.accept_totp(key, request.form['oath'], period=90)
+				
+				# RATE LIMITING:
+				# totp() outputs a 6 digit code, so that's a million options.
+				# if you can check 1000 options per second (not unreasonable) you
+				# so we need to protect against this
+				# this make sure no more than 1 request per second from a single connection
+				# TODO: detect how well this works
+				time.sleep(1)
+				
+				#
+				passed, _ = oath.accept_totp(key, request.form['oath'], period=self.AUTH_WINDOW)
 				if not passed:
 					flash("That oath code didn't work, enter another or <a href='%s'>start again</a>." % (url_for("login",provider=self.__name__.lower()),))
 					return render_template("login_sms.html", mode="get_oath")
 				
 				login_user(User(self.__name__.lower(), id, None, name, None))
 				return redirect("/")
-	
 
 
 # this code is the worst I've written in a long time
