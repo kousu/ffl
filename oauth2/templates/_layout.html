@@ -5,12 +5,35 @@
     <link rel="stylesheet" type="text/css" href={{ url_for("static", filename="bootstrap/css/bootstrap.css")}} />
     <link rel="stylesheet" type="text/css" href={{ url_for("static", filename="font-awesome-4.5.0/css/font-awesome.css")}} />
     <link rel="stylesheet" type="text/css" href={{ url_for("static", filename="bootstrap-social/bootstrap-social.css")}} />
+    <link rel="stylesheet" type="text/css" href={{ url_for("static", filename="style.css")}} />
+    <style>
+    .flashes li {
+      width: 70%; /* extra  */
+    }
+    </style>
     <title>{{ title }}</title>
     {% endblock %}
   </head>
 
   <body style='margin: 1%'>
-    <nav id='controls' style='text-align: right'>
+{# these are supposed to be be left/right aligned
+   which is actually sort of tricky
+https://stackoverflow.com/questions/727958/what-is-the-best-way-to-left-align-and-right-align-two-div-tags
+http://www.w3schools.com/css/css_align.asp
+
+display: inline-block; width: 50%; position: relative; left: 0
+#}
+{% with messages = get_flashed_messages() %}
+  {% if messages %}
+    <ul class=flashes style='display: inline-block; width: 50%; position: relative; left: 0'>
+    {% for message in messages %}
+      <li>{{ message }}</li>
+    {% endfor %}
+    </ul>
+  {% endif %}
+{% endwith %}
+
+    <nav id='controls' style='display: inline-block; width: 48%; position: relative; right: 0; text-align: right'>
     {% block nav %}
       {% if current_user %}
        <a href={{ url_for("user", userid=current_user.id) }}>
@@ -28,16 +51,7 @@
     </nav>
 
     <div id="content">
-{% with messages = get_flashed_messages() %}
-  {% if messages %}
-    <ul class=flashes>
-    {% for message in messages %}
-      <li>{{ message }}</li>
-    {% endfor %}
-    </ul>
-  {% endif %}
-{% endwith %}
-
+    <h1>{% block title %}{% endblock %}</h1>
     {% block content %}{% endblock %}
     </div>
     

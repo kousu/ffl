@@ -1,20 +1,24 @@
-{% extends "_layout.html" %}
-{% block content %}
-  <h1>Login with Email</h1>
-  <p>If you identify yourself this way, your address will be published.</p>
-  <div style='width: 30%; margin-left: auto; margin-right: auto'>
-  <form method="POST" action="{{action}}">
-  <p>You may choose a display name, but if you wish to remain fully anonymous just click the button.</p>
+{% extends "_dialog.html" %}
 
+{% block title %}
+Login with Email
+{% endblock %}
+
+{% block content %}
+
+
+  {% if mode != "sent" %}
+  <p>If you identify yourself this way, your address will be published.</p>
+  <form method="POST" action="{{action}}">
    <!-- XXX this should really have CSRF protection -->
      <div><input style='width: 100%' name="id" type="text" placeholder="Email Address"></div>
      <div><input style='width: 100%' name="name" type="text" placeholder="Display name (optional)"></div>
      <div style='text-align: center'><button>Send confirmation email</button></div>
   </form>
-<br/>
+  {% else %}
+    <h3>Verification email sent to <strong>{{id}}</strong>.</h3>
+    <p>Verification links are only good for 48 hours.</p>
+  {% endif %}
+
 {% endblock %}
 
-
-{% block nav %}
-<!-- wipe out the generic nav block when on the login page -->
-{% endblock %}

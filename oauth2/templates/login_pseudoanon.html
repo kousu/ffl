@@ -1,12 +1,19 @@
-{% extends "_layout.html" %}
+{% extends "_dialog.html" %}
+
+{% block title %}
+Login Pseudoanonymously
+{% endblock %}
+
 {% block content %}
 
-  <div style='width: 30%; margin-left: auto; margin-right: auto'>
-  <h1>Login Pseudoanonymously</h1>
   <p>Logging in pseudoanonymously generates a universally unique username.
-  No one before and no one after you will have this username. Your </p>
+  There are no passwords, no verifications, nothing in the way of making a new identity.
+  No one before you and no one after you will have this username, you can count on it as you can count on the temerity of winter storms.</p>
+  <p>
+     But, logging in will only give you more access if the owner sees you and grants you access,
+     and you will lose access once you log out (unless the owner has set up an out-of-band authorization method like <a href="{{url_for("login",provider="token")}}">token login</a>.)</p>
   <!-- on Ian Goldberg's Nymity Slider, this is "Linkable Anonymity"; "Unlinkable anonymity" is what you have when you're simply not logged in -->
-  <p>You may choose a display name, but if you wish to remain fully anonymous just click the button.</p>
+  <p>Your username is already generated. You may choose a display name to go with it if you want to be less anonymous.</p>
   <form method="POST" action="{{action}}">
    <!-- XXX this should really have CSRF protection -->
      
@@ -14,10 +21,6 @@
      <div><input style='width: 100%' name="name" type="text" placeholder="Display name (optional)"></div>
      <button>Login</button>
   </form>
-<br/>
 {% endblock %}
 
 
-{% block nav %}
-<!-- wipe out the generic nav block when on the login page -->
-{% endblock %}

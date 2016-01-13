@@ -1,10 +1,13 @@
-{% extends "_layout.html" %}
+{% extends "_dialog.html" %}
+
+{% block title %}
+Login with Mobile Phone
+{% endblock %}
+
 {% block content %}
-  <h1>Login with Mobile Phone</h1>
-  <p>If you identify yourself this way, your phone number will be published.</p>
-  <div style='width: 30%; margin-left: auto; margin-right: auto'>
   <form method="POST" action="{{action}}">
   {% if mode == "get_id" %}
+    <p>If you identify yourself this way, your phone number will be published.</p>
    <!-- XXX this should really have CSRF protection -->
      <div><input style='width: 100%' name="id" type="text" placeholder="Phone number"></div>
      <div><input style='width: 100%' name="name" type="text" placeholder="Display name (optional)"></div>
@@ -16,10 +19,6 @@
   <p>Note: the oath code is only good for 5 minutes. If your phone does not receive it within that time you will need to <a href="{{request.url}}"> ask for a new one</a>.</p>
   {% endif %}
   </form>
-<br/>
+
 {% endblock %}
 
-
-{% block nav %}
-<!-- wipe out the generic nav block when on the login page -->
-{% endblock %}
