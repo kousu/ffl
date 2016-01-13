@@ -8,8 +8,13 @@ user = cred['id']
 pwd = cred['secret']
 
 import sys
+import time
 import smtplib
 import email.message
+import email.utils
+
+
+# Keep in mind the tips at http://blog.magiksys.net/generate-and-send-mail-with-python-tutorial
 
 try:
 	from_ = cred['from']
@@ -25,6 +30,8 @@ msg = email.message.Message()
 msg['From'] = from_
 msg['To'] = to
 msg['Subject'] = subject
+msg['Date'] = email.utils.formatdate(time.time(), localtime=True) #why can't sendmessage() just add this by default? fuck
+msg['User-Agent'] = "email.sh"
 msg.set_payload(body)
 
 starttls = cred.get('starttls',False)
@@ -42,4 +49,5 @@ print(smtp.login(user, pwd))
 
 
 smtp.send_message(msg)
+print("message sent")
 smtp.close()
