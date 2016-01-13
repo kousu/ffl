@@ -144,9 +144,9 @@ class User(object):
 		"""
 		return "%s:%s" % (self.provider, self.userid)
 	
-	
+	@property
 	def link(self):
-		raise NotImplementedError
+		return PROVIDERS[self.provider].link(self.userid)
 
 
 class Provider(object):
@@ -162,7 +162,7 @@ class Provider(object):
 		assert isinstance(session, requests.Session)
 		raise NotImplementedError
 
-	@classmethod
+	@staticmethod
 	def link(id):
 		"""
 		generate a homepage link for the given user
@@ -862,8 +862,6 @@ def load_user():
 	except Exception as exc:
 		app.logger.warn(exc)
 		pass
-	
-	g.PROVIDERS = PROVIDERS
 
 
 import binascii, hashlib

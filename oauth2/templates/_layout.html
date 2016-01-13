@@ -36,7 +36,7 @@ display: inline-block; width: 50%; position: relative; left: 0
     <nav id='controls' style='display: inline-block; width: 48%; position: relative; right: 0; text-align: right'>
     {% block nav %}
       {% if g.current_user %}
-       <a href={{ g.PROVIDERS[g.current_user.provider].link(g.current_user.userid) }}>
+       <a href={{ g.current_user.link }}>
         {% if g.current_user.avatar %}
           <img alt='{{ g.current_user.display_name }}' title='{{ g.current_user.display_name }}' src='{{ g.current_user.avatar }}' />.
         {% else %}
