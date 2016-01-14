@@ -1004,7 +1004,7 @@ def user(userid):
 
 @app.route('/')
 def index():
-	flash("this is the index page!")
+	#flash("this is a demonstration flash") #DEBUG: flashes are tricky to style because they only last one page reload
 	return render_template("index.html")
 
 @app.route('/logout', methods=["POST"])
@@ -1077,8 +1077,12 @@ if __name__ == '__main__':
 
 	app.logger.info("Available authorization providers:\n%s", "\n".join("* %s" % e.__name__ for e in PROVIDERS_SORTED))
 
-	import ssl
-	t = ssl.SSLContext(ssl.PROTOCOL_TLSv1_2)
-	t.load_default_certs() # OAuth2 specs that you MUST use TLS, because for simplicity it doesn't do any crypto itself. This is probably a good idea, but it does make testing tricky.
-	t.load_cert_chain("localhost.crt","localhost.key")
+	if all(os.access(f,os.O_RDONLY) for f in ["localhost.crt","localhost.key"]):
+		import ssl
+		t = ssl.SSLContext(ssl.PROTOCOL_TLSv1_2)
+		t.load_default_certs() # OAuth2 specs that you MUST use TLS, because for simplicity it doesn't do any crypto itself. This is probably a good idea, but it does make testing tricky.
+		t.load_cert_chain("localhost.crt","localhost.key")
+	else:
+		t = None
+	
 	app.run(use_reloader=False, host="0.0.0.0", ssl_context=t)
