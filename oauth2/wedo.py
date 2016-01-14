@@ -530,7 +530,7 @@ class OAuth1Provider(OAuthProvider):
 
 
 
-class OAuth2Provider(Provider):
+class OAuth2Provider(OAuthProvider):
 	"""
 	sub-base class for OAuth2 identity providers
 	
@@ -836,7 +836,6 @@ def load_oauth_credentials(fname="credentials.yml"):
 			else:
 				PROVIDERS[provider].app_id = credentials[provider]['id']
 				PROVIDERS[provider].app_secret = credentials[provider]['secret']
-	app.logger.info("Available authorization providers:\n%s", "\n".join("* " + e for e in sorted(PROVIDERS.keys())))
 
 	
 
@@ -963,13 +962,31 @@ def logout():
 	logout_user()
 	return redirect("/")
 
+
+
+# XXX hardcoded
+# I want: Local to be first, probably followed by email, then SMS
+# then OpenID
+# then the OAuths, sorted by name
+# then Pseudoanon
+# finally 'token' (tho I dunno if I even want to expose Token to the user; I'm picturing it embedded in URLs)
+# I dunno
+PROVIDERS_SORTED = [
+  Local,
+  Email,
+  SMS,
+  #OpenID,
+  ] + sorted([P for P in PROVIDERS.values() if issubclass(P, OAuthProvider)], key=lambda P: P.__name__.lower()) + [
+  Pseudoanon,
+  ]
+
 @app.route("/login/")
 @app.route("/login/<provider>", methods=["GET","POST"])
 def login(provider=None):
 	# TODO: put the rendering *into* each provider? so we just say /login/<provider>, find the provider, and do their code?
 	if provider is None:
 		# TODO: sort the OAuths before the OpenIDs before User/pass before Email before Pseudoanon
-		return render_template("login.html", providers=[PROVIDERS[p] for p in sorted(PROVIDERS)])
+		return render_template("login.html", providers=PROVIDERS_SORTED)
 	else:
 		try:
 			provider_ = PROVIDERS[provider]
@@ -1002,6 +1019,9 @@ if __name__ == '__main__':
 	app.secret_key = os.urandom(32)
 	
 	load_oauth_credentials()
+	PROVIDERS_SORTED = [P for P in PROVIDERS_SORTED if P.__name__.lower() in PROVIDERS] #XXX sketchy # also filter PROVIDERS_SORTED to kill providers we don't have credentials for
+
+	app.logger.info("Available authorization providers:\n%s", "\n".join("* %s" % e.__name__ for e in PROVIDERS_SORTED))
 
 	import ssl
 	t = ssl.SSLContext(ssl.PROTOCOL_TLSv1_2)
