@@ -2,6 +2,7 @@
 yaml
 oath
 flask
+openid
 requests_oauthlib
 
 #for SMS (./xsend)

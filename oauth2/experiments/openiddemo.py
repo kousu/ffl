@@ -47,4 +47,6 @@ verify = client.complete(resp, return_to) #argh, why?
 # BEWARE: the return_to URL *must* be HTTPS, because it sends a 
 # see https://en.wikipedia.org/wiki/OpenID#Authentication_Hijacking_in_Unsecured_Connection
 
-print("Logged in as", verify.identity_url)
+print(verify) #DEBUG
+if isinstance(verify, openid.consumer.consumer.SuccessResponse):
+	print("Logged in as", verify.identity_url)

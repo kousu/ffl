@@ -474,7 +474,61 @@ class Pseudoanon(Provider):
 			return redirect("/")
 
 
+import openid.consumer.consumer
+class OpenID(Provider):
+	name = "OpenID"
+	icon = "openid"
+	
+	@staticmethod
+	def link(id):
+		return id #your id *is* a link with OpenID
+	
+	@classmethod
+	def handle(self):
+		if request.method == "GET" and len(request.args)==0:
+
+			return render_template("login_openid.html", action=request.url)
+		elif request.method == "POST":
+			# request
+			
+			sid = Fernet.generate_key()
+			client = openid.consumer.consumer.Consumer({"id": sid}, None)
+			
+			realm = request.url
+			callback_url = request.url
+			auth_url = client.begin(request.form['id']).redirectURL(request.url, callback_url)
+
+			# this is state that needs to be saved and restored for OpenID to behave itself
+			session['openid_session'] = sid
+			session['openid_callback'] = callback_url
+
+			return redirect(auth_url)
+
+		else:
+			# response 
+			assert len(request.args) > 0 and request.method == "GET"
+			client = openid.consumer.consumer.Consumer({"id": session.pop('openid_session')}, None)
+			
+			# python-openid isn't as smooth as python-requests-oauthlib, so we need to do a bit of pre-parsing:
+			resp = request.url
+			resp = parse_qs(urlsplit(resp).query)
+			resp = {k: v[0] for k,v in resp.items()} #strip the list (multi-valued items can fuck off good and well)
+			
+			verify = client.complete(resp, session.pop('openid_callback')) #argh, why?
+			
+			if isinstance(verify, openid.consumer.consumer.SuccessResponse):
+				# TODO: OpenID has an extension that allows asking for profile data on top of proving the URL
+				login_user(User(self.__name__.lower(), verify.identity_url))
+				return redirect("/")
+			else:
+				return "%s fail" % (verify.identity_url), 403
+
+
+
 class OAuthProvider(Provider):
+	# you know what OAuth could've done instead of making each site specify these URLs?
+	# it could have used meta rel= tags to let autodiscovery happen, the way webmentions{.io} work
+	# and the way OpenID, ancient as it is, worked:     <link rel="openid2.provider" href="http://www.livejournal.com/openid/server.bml" />
 	auth_url = None
 	token_url = None
 
@@ -975,7 +1029,7 @@ PROVIDERS_SORTED = [
   Local,
   Email,
   SMS,
-  #OpenID,
+  OpenID,
   ] + sorted([P for P in PROVIDERS.values() if issubclass(P, OAuthProvider)], key=lambda P: P.__name__.lower()) + [
   Pseudoanon,
   ]
