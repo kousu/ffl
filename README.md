@@ -318,6 +318,8 @@ BUT: IndieAuth requires subscribers to do some work: namely, put this up online
  / http://indiewebify.me / indiecert.net
 
 
+* https://micro.blog/ -- good UI, user-focused. good!
+* mastodon! (didn't exist when I started this project)
 * BrowserID (aka Mozilla Persona)
 * WebID (dead?)
 * http://browserauth.net/
